@@ -86,6 +86,9 @@ impl UnifiedBuilder {
             link_color.a *= opa;
         }
         let text_run = TextRun {
+            source: None,
+            spacing: None,
+            rtl: None,
             text: hyperlink.text.clone(),
             pos: hyperlink.pos,
             size: hyperlink.size,

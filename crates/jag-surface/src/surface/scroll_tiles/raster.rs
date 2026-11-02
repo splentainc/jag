@@ -113,6 +113,9 @@ fn ink_bounds(
             };
             let logical_size = (run.size * scale).max(1.0);
             let physical = jag_draw::TextRun {
+                source: run.source.clone(),
+                spacing: run.spacing,
+                rtl: run.rtl,
                 text: run.text.clone(),
                 pos: [0.0, 0.0],
                 size: (logical_size * dpi).max(1.0),

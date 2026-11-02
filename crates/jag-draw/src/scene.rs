@@ -273,8 +273,28 @@ pub enum FontStyle {
     Oblique,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextSpacing {
+    pub letter: f32,
+    pub word: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextSourceSlice {
+    pub bytes: core::ops::Range<usize>,
+    /// Partial ligature clip edges in em units, relative to the run origin.
+    pub clip_start: Option<f32>,
+    pub clip_end: Option<f32>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextRun {
+    /// CSS tracking and word spacing in em units, applied while shaping.
+    pub spacing: Option<TextSpacing>,
+    /// Resolved horizontal direction; None asks the shaper to infer it.
+    pub rtl: Option<bool>,
+    /// Optional source selection within the full shaping context.
+    pub source: Option<TextSourceSlice>,
     pub text: String,
     pub pos: [f32; 2],
     /// Font size in **physical device pixels** (CSS px × DPI scale).

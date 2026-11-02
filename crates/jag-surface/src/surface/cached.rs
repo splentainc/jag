@@ -231,6 +231,9 @@ impl JagSurface {
                 let logical_size = (run.size * s).max(1.0);
                 let physical_size = (logical_size * sf).max(1.0);
                 let run_for_provider = jag_draw::TextRun {
+                    source: run.source.clone(),
+                    spacing: run.spacing,
+                    rtl: run.rtl,
                     text: run.text.clone(),
                     pos: [0.0, 0.0],
                     size: physical_size,

@@ -64,6 +64,9 @@ impl Canvas {
         // Rasterize at *physical* pixel size so small styled text matches the
         // same provider path used by display-list text.
         let run = TextRun {
+            source: None,
+            spacing: None,
+            rtl: None,
             text: text.to_string(),
             pos: [0.0, 0.0],
             size: (size_px * sf).max(1.0),
@@ -100,6 +103,7 @@ impl Canvas {
                     clip_glyph_to_rect(&g.mask, glyph_origin_device, clip)
                 {
                     let clipped = RasterizedGlyph {
+                        source: None,
                         offset: [0.0, 0.0],
                         mask: clipped_mask,
                     };
@@ -177,6 +181,9 @@ impl Canvas {
                 1.0
             };
             let run = TextRun {
+                source: None,
+                spacing: None,
+                rtl: None,
                 text: text.to_string(),
                 pos: [0.0, 0.0],
                 size: (size_px * sf).max(1.0),

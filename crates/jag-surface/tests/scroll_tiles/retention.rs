@@ -58,6 +58,7 @@ struct OverhangingGlyph;
 impl jag_draw::TextProvider for OverhangingGlyph {
     fn rasterize_run(&self, _: &jag_draw::TextRun) -> Vec<jag_draw::RasterizedGlyph> {
         vec![jag_draw::RasterizedGlyph {
+            source: None,
             offset: [-3.0, -7.0],
             mask: jag_draw::GlyphMask::Subpixel(jag_draw::SubpixelMask {
                 width: 48,

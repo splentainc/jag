@@ -88,6 +88,42 @@ impl TextShaper {
         font_size: f32,
         variations: &[(harfrust::Tag, f32)],
     ) -> ShapedRun {
+        Self::shape_with_direction(text, text_range, font, font_id, font_size, variations, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn shape_with_direction(
+        text: &str,
+        text_range: Range<usize>,
+        font: &FontFace,
+        font_id: u32,
+        font_size: f32,
+        variations: &[(harfrust::Tag, f32)],
+        rtl: Option<bool>,
+    ) -> ShapedRun {
+        Self::shape_with_features(
+            text,
+            text_range,
+            font,
+            font_id,
+            font_size,
+            variations,
+            rtl,
+            &[],
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn shape_with_features(
+        text: &str,
+        text_range: Range<usize>,
+        font: &FontFace,
+        font_id: u32,
+        font_size: f32,
+        variations: &[(harfrust::Tag, f32)],
+        rtl: Option<bool>,
+        features: &[harfrust::Feature],
+    ) -> ShapedRun {
         // Build a harfrust FontRef from the font bytes.
         let font_data = font.as_bytes();
         let font_ref = HbFontRef::from_index(&font_data, font.index() as u32)
@@ -112,11 +148,18 @@ impl TextShaper {
         // for dependent vowel signs and other combining marks.
         let mut buffer = HbUnicodeBuffer::new();
         buffer.push_str(text);
+        if let Some(rtl) = rtl {
+            buffer.set_direction(if rtl {
+                HbDirection::RightToLeft
+            } else {
+                HbDirection::LeftToRight
+            });
+        }
         buffer.guess_segment_properties();
         let direction = Self::direction_from_harfrust(buffer.direction());
         let script = Self::script_from_harfrust(buffer.script());
 
-        let glyph_buffer = shaper.shape(buffer, &[]);
+        let glyph_buffer = shaper.shape(buffer, features);
         let infos = glyph_buffer.glyph_infos();
         let positions = glyph_buffer.glyph_positions();
 

@@ -11,6 +11,7 @@ struct LcdEdge;
 impl TextProvider for LcdEdge {
     fn rasterize_run(&self, _: &TextRun) -> Vec<RasterizedGlyph> {
         vec![RasterizedGlyph {
+            source: None,
             offset: [0.0, 0.0],
             mask: GlyphMask::Subpixel(SubpixelMask {
                 width: 4,

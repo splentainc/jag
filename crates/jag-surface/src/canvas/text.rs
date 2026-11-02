@@ -87,6 +87,35 @@ impl Canvas {
         color: ColorLinPremul,
         z: i32,
     ) {
+        self.draw_text_context(
+            TextRun {
+                source: None,
+                spacing: None,
+                rtl: None,
+                text,
+                pos: origin,
+                size: size_px,
+                logical_size: size_px,
+                color,
+                weight,
+                style,
+                family,
+            },
+            None,
+            z,
+        );
+    }
+
+    /// Paint an already resolved text context, including its bidi direction.
+    /// Placement and source clipping are supplied by the paragraph owner.
+    pub fn draw_text_context(&mut self, mut run: TextRun, fill: Option<&Brush>, z: i32) {
+        if let Some(fill) = fill {
+            self.painter.text_with_fill(run, fill.clone(), z);
+            return;
+        }
+        let origin = run.pos;
+        let size_px = run.size;
+        let color = run.color;
         // If we have a provider and we're not inside an opacity group,
         // rasterize immediately (simple, reliable).
         // Inside opacity groups we route through display-list text so the
@@ -114,16 +143,9 @@ impl Canvas {
             // offsets back into logical units below.
             // Carry font weight through so providers (e.g., JagTextProvider) can approximate
             // bold/semibold rendering when available.
-            let run = TextRun {
-                text,
-                pos: [0.0, 0.0],
-                size: (size_px * sf).max(1.0),
-                logical_size: size_px,
-                color,
-                weight,
-                style,
-                family,
-            };
+            run.pos = [0.0, 0.0];
+            run.size = (size_px * sf).max(1.0);
+            run.logical_size = size_px;
 
             // Rasterize glyphs, using a shared cache to avoid
             // re-rasterizing identical text every frame.
@@ -156,6 +178,7 @@ impl Canvas {
                         clip_glyph_to_rect(&g.mask, glyph_origin_device, clip)
                     {
                         let clipped = RasterizedGlyph {
+                            source: None,
                             offset: [0.0, 0.0],
                             mask: clipped_mask,
                         };
@@ -177,20 +200,7 @@ impl Canvas {
                 }
             }
         } else {
-            // Fallback: use display list path (complex, but kept for compatibility)
-            self.painter.text(
-                TextRun {
-                    text,
-                    pos: origin,
-                    size: size_px,
-                    logical_size: size_px,
-                    color,
-                    weight,
-                    style,
-                    family,
-                },
-                z,
-            );
+            self.painter.text(run, z);
         }
     }
 
@@ -213,6 +223,9 @@ impl Canvas {
     ) {
         self.painter.text_with_fill(
             TextRun {
+                source: None,
+                spacing: None,
+                rtl: None,
                 text,
                 pos: origin,
                 size: size_px,

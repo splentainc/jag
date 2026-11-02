@@ -157,6 +157,7 @@ fn tint_glyph_with_brush(
         }
     }
     RasterizedGlyph {
+        source: None,
         offset: glyph.offset,
         mask: GlyphMask::Color(ColorMask {
             width,

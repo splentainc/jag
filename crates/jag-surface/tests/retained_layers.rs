@@ -19,6 +19,7 @@ impl TextProvider for ChangingFont {
     fn rasterize_run(&self, _: &TextRun) -> Vec<RasterizedGlyph> {
         let c = if self.cache_tag() == 0 { 100 } else { 210 };
         vec![RasterizedGlyph {
+            source: None,
             offset: [0.0, 0.0],
             mask: GlyphMask::Subpixel(SubpixelMask {
                 width: 8,

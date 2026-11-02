@@ -17,6 +17,7 @@ fn red_to_blue(start: [f32; 2], end: [f32; 2]) -> Brush {
 /// Opaque `w`×`h` subpixel glyph.
 fn solid_glyph(w: u32, h: u32) -> RasterizedGlyph {
     RasterizedGlyph {
+        source: None,
         offset: [0.0, 0.0],
         mask: GlyphMask::Subpixel(SubpixelMask {
             width: w,
@@ -30,6 +31,9 @@ fn solid_glyph(w: u32, h: u32) -> RasterizedGlyph {
 fn draw(transform: Transform2D, fill: Option<Brush>) -> ExtractedTextDraw {
     ExtractedTextDraw {
         run: TextRun {
+            source: None,
+            spacing: None,
+            rtl: None,
             text: "x".into(),
             pos: [0.0, 0.0],
             size: 16.0,
@@ -87,6 +91,7 @@ fn gradient_stays_fixed_to_text_when_scrolled() {
 #[test]
 fn coverage_scales_the_fill_and_empty_pixels_stay_clear() {
     let glyph = RasterizedGlyph {
+        source: None,
         offset: [0.0, 0.0],
         mask: GlyphMask::Subpixel(SubpixelMask {
             width: 2,
