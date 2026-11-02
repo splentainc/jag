@@ -21,6 +21,14 @@ pub enum ImageFitMode {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
+    DrawSpatialLayer(std::sync::Arc<crate::spatial::SpatialLayer>),
+    DrawProjectedTexture {
+        opacity: f32,
+        texture_id: ExternalTextureId,
+        quad: [[f32; 4]; 4],
+        bounds: Rect,
+        z: i32,
+    },
     /// An immutable paint commit with a small set of live compositor inputs.
     DrawScrollScene {
         scene: std::sync::Arc<crate::ScrollScene>,
@@ -204,6 +212,8 @@ impl Command {
     /// Get the z-index of this command, or None for non-drawable commands
     pub fn z_index(&self) -> Option<i32> {
         match self {
+            Command::DrawSpatialLayer(layer) => Some(layer.z),
+            Command::DrawProjectedTexture { z, .. } => Some(*z),
             Command::DrawCompositeTile { z, .. } => Some(*z),
             Command::DrawRect { z, .. } => Some(*z),
             Command::DrawRoundedRect { z, .. } => Some(*z),

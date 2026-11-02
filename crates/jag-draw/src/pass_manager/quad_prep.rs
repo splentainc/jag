@@ -51,18 +51,22 @@ impl PassManager {
         for (tex_view, origin, size, z_val, opacity, clip, rounded_clip) in image_views.iter() {
             let verts = [
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: [origin[0], origin[1]],
                     uv: [0.0, 0.0],
                 },
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: [origin[0] + size[0], origin[1]],
                     uv: [1.0, 0.0],
                 },
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: [origin[0] + size[0], origin[1] + size[1]],
                     uv: [1.0, 1.0],
                 },
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: [origin[0], origin[1] + size[1]],
                     uv: [0.0, 1.0],
                 },
@@ -111,18 +115,22 @@ impl PassManager {
         for (view_scaled, quad, z_val, opacity, clip, rounded_clip) in svg_views.iter() {
             let verts = [
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: quad[0],
                     uv: [0.0, 0.0],
                 },
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: quad[1],
                     uv: [1.0, 0.0],
                 },
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: quad[2],
                     uv: [1.0, 1.0],
                 },
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: quad[3],
                     uv: [0.0, 1.0],
                 },
@@ -205,18 +213,22 @@ impl PassManager {
         for (tex_view, origin, size, z_val, opacity, clip, rounded_clip) in image_views_off.iter() {
             let verts = [
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: [origin[0], origin[1]],
                     uv: [0.0, 0.0],
                 },
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: [origin[0] + size[0], origin[1]],
                     uv: [1.0, 0.0],
                 },
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: [origin[0] + size[0], origin[1] + size[1]],
                     uv: [1.0, 1.0],
                 },
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: [origin[0], origin[1] + size[1]],
                     uv: [0.0, 1.0],
                 },
@@ -267,18 +279,22 @@ impl PassManager {
         for (view_scaled, quad, z_val, opacity, clip, rounded_clip) in svg_views_off.iter() {
             let verts = [
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: quad[0],
                     uv: [0.0, 0.0],
                 },
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: quad[1],
                     uv: [1.0, 0.0],
                 },
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: quad[2],
                     uv: [1.0, 1.0],
                 },
                 ImageQuadVtx {
+                    zw: [0., 1.],
                     pos: quad[3],
                     uv: [0.0, 1.0],
                 },

@@ -206,22 +206,21 @@ impl CompositeResources {
 }
 
 fn quad_vertices(draw: &ExtractedExternalTextureDraw) -> [ImageQuadVtx; 4] {
-    [
+    let uv = [
+        [draw.uv[0], draw.uv[1]],
+        [draw.uv[2], draw.uv[1]],
+        [draw.uv[2], draw.uv[3]],
+        [draw.uv[0], draw.uv[3]],
+    ];
+    std::array::from_fn(|i| {
+        let p =
+            draw.homogeneous
+                .map(|q| q[i])
+                .unwrap_or([draw.quad[i][0], draw.quad[i][1], 0., 1.]);
         ImageQuadVtx {
-            pos: draw.quad[0],
-            uv: [draw.uv[0], draw.uv[1]],
-        },
-        ImageQuadVtx {
-            pos: draw.quad[1],
-            uv: [draw.uv[2], draw.uv[1]],
-        },
-        ImageQuadVtx {
-            pos: draw.quad[2],
-            uv: [draw.uv[2], draw.uv[3]],
-        },
-        ImageQuadVtx {
-            pos: draw.quad[3],
-            uv: [draw.uv[0], draw.uv[3]],
-        },
-    ]
+            pos: [p[0], p[1]],
+            uv: uv[i],
+            zw: [p[2], p[3]],
+        }
+    })
 }

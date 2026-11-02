@@ -303,6 +303,7 @@ pub(crate) struct TextQuadVtx {
 pub(crate) struct ImageQuadVtx {
     pos: [f32; 2],
     uv: [f32; 2],
+    zw: [f32; 2],
 }
 
 mod blended_shadows;

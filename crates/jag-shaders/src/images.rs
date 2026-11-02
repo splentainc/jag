@@ -178,6 +178,7 @@ struct ViewportUniform {
 struct VsIn {
     @location(0) pos: vec2<f32>,
     @location(1) uv: vec2<f32>,
+    @location(2) zw: vec2<f32>,
 };
 
 struct VsOut {
@@ -188,13 +189,13 @@ struct VsOut {
 @vertex
 fn vs_main(inp: VsIn) -> VsOut {
     var out: VsOut;
-    let scrolled = inp.pos + vp.scroll_offset;
-    let ndc = vec2<f32>(scrolled.x * vp.scale.x + vp.translate.x,
-                        scrolled.y * vp.scale.y + vp.translate.y);
+    let scrolled = inp.pos + vp.scroll_offset * inp.zw.y;
+    let ndc = vec2<f32>(scrolled.x * vp.scale.x + vp.translate.x * inp.zw.y,
+                        scrolled.y * vp.scale.y + vp.translate.y * inp.zw.y);
     // Convert z-index to depth [0.0, 1.0]
     // HIGHER z-index = closer = LOWER depth value (rendered on top)
     let depth = (-clamp(z_index, -1000000.0, 1000000.0) / 1000000.0) * 0.5 + 0.5;
-    out.pos = vec4<f32>(ndc, depth, 1.0);
+    out.pos = vec4<f32>(ndc, depth * inp.zw.y + inp.zw.x, inp.zw.y);
     out.uv = inp.uv;
     return out;
 }
@@ -276,6 +277,7 @@ fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
         color = vec4<f32>(color.rgb * aa, color.a * aa);
     }
 
+    if color.a <= 0.0 { discard; }
     if img_params.source_linear > 0.5 && !web_source {
         return encode_output(color);
     }

@@ -183,6 +183,9 @@ impl UnifiedBuilder {
             Command::PushScrollLayer { .. }
             | Command::PopScrollLayer
             | Command::ScrollClipRadii(_) => {}
+            Command::DrawSpatialLayer(_) => {
+                panic!("spatial layers must be composed before GPU upload")
+            }
             Command::DrawScrollScene { .. } => {
                 panic!("retained scroll scene must be composed before GPU upload")
             }
@@ -215,6 +218,7 @@ impl UnifiedBuilder {
             Command::DrawImage { .. } => self.handle_image(cmd),
             Command::DrawSvg { .. } => self.handle_svg(cmd),
             Command::DrawExternalTexture { .. } => self.handle_external_texture(cmd),
+            Command::DrawProjectedTexture { .. } => self.handle_projected_texture(cmd),
             Command::DrawCompositeTile { .. } => self.handle_composite_tile(cmd),
 
             // Box shadows feed a dedicated analytic shadow pipeline. Each one

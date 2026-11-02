@@ -14,6 +14,7 @@ readme = "README.md"
 path = "src/lib.rs"
 
 [dependencies]
+euclid = "0.22"
 wgpu = { workspace = true }
 palette = { workspace = true }
 bytemuck = { workspace = true }

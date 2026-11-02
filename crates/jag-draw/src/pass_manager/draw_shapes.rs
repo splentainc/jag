@@ -41,30 +41,29 @@ impl PassManager {
         // debug log removed
         crate::gpu_transfer::upload_buffer(queue, &self.vp_buffer, 0, bytemuck::bytes_of(&vp_data));
 
-        #[repr(C)]
-        #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-        struct QuadVtx {
-            pos: [f32; 2],
-            uv: [f32; 2],
-        }
+        type QuadVtx = super::ImageQuadVtx;
         let x = origin[0];
         let y = origin[1];
         let w = size[0].max(0.0);
         let h = size[1].max(0.0);
         let verts = [
             QuadVtx {
+                zw: [0., 1.],
                 pos: [x, y],
                 uv: [0.0, 0.0],
             },
             QuadVtx {
+                zw: [0., 1.],
                 pos: [x + w, y],
                 uv: [1.0, 0.0],
             },
             QuadVtx {
+                zw: [0., 1.],
                 pos: [x + w, y + h],
                 uv: [1.0, 1.0],
             },
             QuadVtx {
+                zw: [0., 1.],
                 pos: [x, y + h],
                 uv: [0.0, 1.0],
             },

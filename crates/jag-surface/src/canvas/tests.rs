@@ -9,6 +9,7 @@ mod side_channel_opacity_tests {
             height: 240,
         };
         Canvas {
+            spatial_layers: Vec::new(),
             viewport,
             painter: Painter::begin_frame(viewport),
             clear_color: None,
@@ -210,6 +211,7 @@ mod fill_rect_rounded_clip_tests {
             height: 240,
         };
         Canvas {
+            spatial_layers: Vec::new(),
             viewport,
             painter: Painter::begin_frame(viewport),
             clear_color: None,

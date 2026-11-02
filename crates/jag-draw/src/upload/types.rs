@@ -62,6 +62,7 @@ pub struct ExtractedSvgDraw {
 pub struct ExtractedExternalTextureDraw {
     pub texture_id: ExternalTextureId,
     pub quad: [[f32; 2]; 4],
+    pub homogeneous: Option<[[f32; 4]; 4]>,
     pub clip: Option<Rect>,
     pub origin: [f32; 2],
     pub size: [f32; 2],

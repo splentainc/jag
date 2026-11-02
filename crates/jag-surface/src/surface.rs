@@ -17,6 +17,7 @@ mod opacity;
 mod precision;
 mod retained_layers;
 mod scroll_tiles;
+mod spatial;
 mod text_mask;
 
 pub use retained_layers::RetainedLayerStats;

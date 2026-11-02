@@ -238,6 +238,7 @@ impl UnifiedBuilder {
         let opa = self.current_opacity();
         self.external_texture_draws
             .push(ExtractedExternalTextureDraw {
+                homogeneous: None,
                 texture_id: *texture_id,
                 quad: [
                     [rect.x, rect.y],
@@ -268,6 +269,7 @@ impl UnifiedBuilder {
         {
             self.external_texture_draws
                 .push(ExtractedExternalTextureDraw {
+                    homogeneous: None,
                     texture_id: *texture_id,
                     quad: [
                         [rect.x, rect.y],
@@ -283,6 +285,34 @@ impl UnifiedBuilder {
                     premultiplied: true,
                     uv: *uv,
                     rounded_clip: *rounded_clip,
+                });
+        }
+    }
+}
+
+impl super::UnifiedBuilder {
+    pub(super) fn handle_projected_texture(&mut self, cmd: &Command) {
+        if let Command::DrawProjectedTexture {
+            opacity,
+            texture_id,
+            quad,
+            bounds,
+            z,
+        } = cmd
+        {
+            self.external_texture_draws
+                .push(ExtractedExternalTextureDraw {
+                    texture_id: *texture_id,
+                    homogeneous: Some(*quad),
+                    quad: quad.map(|p| [p[0] / p[3], p[1] / p[3]]),
+                    clip: self.current_clip(),
+                    origin: [bounds.x, bounds.y],
+                    size: [bounds.w, bounds.h],
+                    z: *z,
+                    opacity: *opacity * self.current_opacity(),
+                    premultiplied: true,
+                    uv: [0., 0., 1., 1.],
+                    rounded_clip: None,
                 });
         }
     }

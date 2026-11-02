@@ -10,6 +10,7 @@ mod images_state;
 mod masks;
 mod scroll_scene;
 mod shapes;
+mod spatial;
 pub use scroll_scene::ScrollSceneCapture;
 mod text;
 mod text_extra;
@@ -31,6 +32,7 @@ pub use jag_draw::ImageFitMode;
 
 /// Builder for a single frame’s draw commands. Wraps `Painter` and adds canvas helpers.
 pub struct Canvas {
+    pub(crate) spatial_layers: Vec<spatial::SpatialCapture>,
     pub(crate) viewport: Viewport,
     pub(crate) painter: Painter,
     pub(crate) clear_color: Option<ColorLinPremul>,

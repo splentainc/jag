@@ -19,6 +19,7 @@ impl JagSurface {
     pub fn begin_frame(&self, width: u32, height: u32) -> Canvas {
         let vp = Viewport { width, height };
         Canvas {
+            spatial_layers: Vec::new(),
             viewport: vp,
             painter: Painter::begin_frame(vp),
             clear_color: None,

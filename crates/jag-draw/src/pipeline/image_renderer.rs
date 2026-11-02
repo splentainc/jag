@@ -131,9 +131,14 @@ impl ImageRenderer {
                     module: &shader,
                     entry_point: "vs_main",
                     buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: (std::mem::size_of::<f32>() * 4) as u64,
+                        array_stride: (std::mem::size_of::<f32>() * 6) as u64,
                         step_mode: wgpu::VertexStepMode::Vertex,
                         attributes: &[
+                            wgpu::VertexAttribute {
+                                offset: 16,
+                                shader_location: 2,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
                             wgpu::VertexAttribute {
                                 offset: 0,
                                 shader_location: 0,

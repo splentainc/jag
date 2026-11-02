@@ -22,6 +22,8 @@ impl JagSurface {
         let mut list = canvas.painter.finish();
         self.reset_synthetic_external_texture_ids();
         list.commands =
+            self.flatten_spatial_layers(&list.commands, list.viewport, text_provider.as_ref())?;
+        list.commands =
             self.flatten_scroll_layers(&list.commands, list.viewport, text_provider.as_ref())?;
         let width = canvas.viewport.width.max(1);
         let height = canvas.viewport.height.max(1);

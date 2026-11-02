@@ -114,6 +114,24 @@ impl ScrollScene {
 }
 
 pub fn translate_command(command: &mut Command, delta: [f32; 2]) {
+    if let Command::DrawSpatialLayer(layer) = command {
+        let layer = std::sync::Arc::make_mut(layer);
+        layer.matrix = crate::spatial::Matrix4::from_array(layer.matrix)
+            .then(&crate::spatial::Matrix4::translation(
+                delta[0], delta[1], 0.,
+            ))
+            .to_array();
+        return;
+    }
+    if let Command::DrawProjectedTexture { quad, bounds, .. } = command {
+        for p in quad {
+            p[0] += delta[0] * p[3];
+            p[1] += delta[1] * p[3];
+        }
+        bounds.x += delta[0];
+        bounds.y += delta[1];
+        return;
+    }
     let transform = match command {
         Command::DrawRect { transform, .. }
         | Command::DrawRoundedRect { transform, .. }
