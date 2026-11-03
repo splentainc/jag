@@ -8,6 +8,9 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
+#[path = "retained_layers/clip_translation.rs"]
+mod clip_translation;
+
 #[derive(Default)]
 struct ChangingFont {
     revision: AtomicU64,

@@ -195,10 +195,20 @@ impl RetainedLayers {
                     }
                     transform
                 }
-                Command::PushClip(_)
-                | Command::PopClip
-                | Command::PopTransform
-                | Command::ScrollClipRadii(_) => continue,
+                Command::PushClip(clip) => {
+                    // Localized scissors cannot affect pixels outside this
+                    // render target. A larger ancestor clip moves in local
+                    // coordinates during scroll, but must not invalidate an
+                    // otherwise unchanged, fully visible layer.
+                    let right = (clip.0.x + clip.0.w).clamp(0.0, pixels[0] as f32);
+                    let bottom = (clip.0.y + clip.0.h).clamp(0.0, pixels[1] as f32);
+                    clip.0.x = clip.0.x.clamp(0.0, pixels[0] as f32);
+                    clip.0.y = clip.0.y.clamp(0.0, pixels[1] as f32);
+                    clip.0.w = (right - clip.0.x).max(0.0);
+                    clip.0.h = (bottom - clip.0.y).max(0.0);
+                    continue;
+                }
+                Command::PopClip | Command::PopTransform | Command::ScrollClipRadii(_) => continue,
                 Command::DrawCompositeTile {
                     texture_id, rect, ..
                 } => {
