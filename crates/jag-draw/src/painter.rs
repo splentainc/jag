@@ -3,6 +3,7 @@ use crate::display_list::{Command, DisplayList, ExternalTextureId, Viewport};
 use crate::scene::*;
 use std::path::PathBuf;
 
+#[derive(Clone)]
 pub struct Painter {
     list: DisplayList,
     transform_stack: Vec<Transform2D>,

@@ -1,6 +1,41 @@
 use super::PassManager;
 use std::sync::Arc;
+
+/// Immutable bindings transferred with a completed scene. Strong frame leases
+/// survive producer retirement and remain alive through queue submission.
+#[derive(Clone, Default)]
+pub struct ExternalTextureBindings {
+    _leases: Vec<Arc<()>>,
+    views: std::collections::HashMap<crate::ExternalTextureId, Arc<wgpu::TextureView>>,
+    linear: std::collections::HashSet<crate::ExternalTextureId>,
+    owners:
+        std::collections::HashMap<crate::ExternalTextureId, Arc<dyn std::any::Any + Send + Sync>>,
+    lifetimes: std::collections::HashMap<crate::ExternalTextureId, std::sync::Weak<()>>,
+}
+
 impl PassManager {
+    pub fn snapshot_external_textures(&self) -> ExternalTextureBindings {
+        ExternalTextureBindings {
+            _leases: self
+                .external_texture_lifetimes
+                .values()
+                .filter_map(std::sync::Weak::upgrade)
+                .collect(),
+            views: self.external_textures.clone(),
+            linear: self.linear_external_textures.clone(),
+            owners: self.external_texture_owners.clone(),
+            lifetimes: self.external_texture_lifetimes.clone(),
+        }
+    }
+
+    pub fn install_external_textures(&mut self, bindings: &ExternalTextureBindings) {
+        self.external_textures.clone_from(&bindings.views);
+        self.linear_external_textures.clone_from(&bindings.linear);
+        self.external_texture_owners.clone_from(&bindings.owners);
+        self.external_texture_lifetimes
+            .clone_from(&bindings.lifetimes);
+    }
+
     /// Register an externally-rendered texture for compositing in the current frame.
     pub fn register_external_texture(
         &mut self,

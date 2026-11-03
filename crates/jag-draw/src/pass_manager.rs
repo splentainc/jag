@@ -324,3 +324,4 @@ mod targets;
 mod text_prep;
 
 mod external_bindings;
+pub use external_bindings::ExternalTextureBindings;

@@ -5,6 +5,7 @@ use jag_draw::{
     Viewport,
 };
 
+mod committed;
 mod helpers;
 mod images_state;
 mod masks;
@@ -31,6 +32,7 @@ pub struct RoundedRectClip {
 pub use jag_draw::ImageFitMode;
 
 /// Builder for a single frame’s draw commands. Wraps `Painter` and adds canvas helpers.
+#[derive(Clone)]
 pub struct Canvas {
     pub(crate) spatial_layers: Vec<spatial::SpatialCapture>,
     pub(crate) viewport: Viewport,
@@ -90,11 +92,13 @@ pub struct Canvas {
     pub(crate) next_generated_mask_texture_id: u64,
 }
 
+#[derive(Clone)]
 pub(crate) struct UrlMaskTexture {
     pub id: jag_draw::ExternalTextureId,
     pub path: std::path::PathBuf,
 }
 
+#[derive(Clone)]
 pub(crate) struct GeneratedMaskTexture {
     pub id: jag_draw::ExternalTextureId,
     pub width: u32,

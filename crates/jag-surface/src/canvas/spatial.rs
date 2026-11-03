@@ -5,6 +5,7 @@ use jag_draw::{
     spatial::{self, Matrix4, SpatialLayer},
 };
 use std::sync::Arc;
+#[derive(Clone)]
 pub(crate) struct SpatialCapture {
     start: usize,
     ambient_opacity: f32,
