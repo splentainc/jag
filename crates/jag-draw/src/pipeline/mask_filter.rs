@@ -181,6 +181,7 @@ impl MaskFilterRenderer {
         accumulated: &wgpu::TextureView,
         next_layer: &wgpu::TextureView,
         operation: crate::MaskComposite,
+        flip_next: bool,
     ) -> wgpu::BindGroup {
         let mut params = [0u32; 28];
         params[0] = match operation {
@@ -189,6 +190,7 @@ impl MaskFilterRenderer {
             crate::MaskComposite::Intersect => 2,
             crate::MaskComposite::Exclude => 3,
         };
+        params[1] = u32::from(flip_next);
         let buffer = initialize_buffer_resource(
             device,
             "mask-composite-operation",

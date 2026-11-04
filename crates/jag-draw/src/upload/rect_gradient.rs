@@ -121,8 +121,15 @@ fn srgb_split_points(c0: [f32; 4], c1: [f32; 4]) -> Vec<f32> {
         }
         let (ca, cb) = (lerp_color(c0, c1, a), lerp_color(c0, c1, b));
         let exact = lerp_color(c0, c1, mid);
+        let encoded = |value: f32, alpha: f32| {
+            if alpha > 0.0 {
+                linear_to_srgb(value / alpha) * alpha
+            } else {
+                0.0
+            }
+        };
         let error = (0..3)
-            .map(|i| (linear_to_srgb(0.5 * (ca[i] + cb[i])) - linear_to_srgb(exact[i])).abs())
+            .map(|i| (encoded(0.5 * (ca[i] + cb[i]), exact[3]) - encoded(exact[i], exact[3])).abs())
             .fold(0.0, f32::max);
         if error <= HALF_OUTPUT_STEP {
             return;

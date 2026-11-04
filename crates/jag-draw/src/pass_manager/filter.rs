@@ -93,6 +93,7 @@ impl PassManager {
                     &view,
                     text_clip,
                     crate::MaskComposite::Intersect,
+                    true,
                 );
                 self.record_mask_pass(encoder, &clipped, &bind, true);
                 clipped
@@ -114,6 +115,7 @@ impl PassManager {
                 &coverage,
                 &accumulated,
                 layer.composite,
+                false,
             );
             self.record_mask_pass(encoder, &view, &bind, true);
             accumulated = view;
@@ -133,7 +135,14 @@ impl PassManager {
                 texture_id: crate::ExternalTextureId(0),
                 mode: crate::MaskMode::Alpha,
                 rect,
-                mapping: None,
+                mapping: Some(crate::MaskTextureMapping {
+                    inverse_transform: [1., 0., 0., 1., 0., 0.],
+                    paint_rect: rect,
+                    tile_rect: rect,
+                    tile_step: [rect.w, rect.h],
+                    repeat_axes: [false; 2],
+                    flip_y: true,
+                }),
             },
             false,
         );

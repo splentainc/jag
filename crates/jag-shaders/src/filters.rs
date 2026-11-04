@@ -342,8 +342,12 @@ struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     return VsOut(vec4(positions[index], 0.0, 1.0), uvs[index]);
 }
 @fragment fn fs_main(input: VsOut) -> @location(0) vec4<f32> {
-    let top = textureSample(accumulated, source_sampler, input.uv).a;
-    let below = textureSample(next_layer, source_sampler, input.uv).a;
+    // Coverage textures retain their row orientation through every combination.
+    // Glyph coverage begins in source-surface orientation and needs one flip.
+    let uv = vec2(input.uv.x, 1.0 - input.uv.y);
+    let next_uv = select(uv, input.uv, operation.y == 1u);
+    let top = textureSample(accumulated, source_sampler, uv).a;
+    let below = textureSample(next_layer, source_sampler, next_uv).a;
     var coverage = top + below - top * below;
     if operation.x == 1u { coverage = top * (1.0 - below); }
     if operation.x == 2u { coverage = top * below; }

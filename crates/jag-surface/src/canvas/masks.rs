@@ -56,8 +56,8 @@ impl Canvas {
         if mapped_rect.w <= 0.0 || mapped_rect.h <= 0.0 || stops.is_empty() {
             return None;
         }
-        let width = mapped_rect.w.ceil().max(1.0) as u32;
-        let height = mapped_rect.h.ceil().max(1.0) as u32;
+        let width = (mapped_rect.w * self.dpi_scale.max(1.0)).ceil().max(1.0) as u32;
+        let height = (mapped_rect.h * self.dpi_scale.max(1.0)).ceil().max(1.0) as u32;
         let pixels = raster_generated_gradient(
             mapped_rect,
             paint_rect,
@@ -158,7 +158,7 @@ impl Canvas {
     }
 }
 
-fn transformed_bounds(rect: Rect, transform: [f32; 6]) -> Rect {
+pub(super) fn transformed_bounds(rect: Rect, transform: [f32; 6]) -> Rect {
     let [a, b, c, d, e, f] = transform;
     let map = |x, y| [a * x + c * y + e, b * x + d * y + f];
     let corners = [
@@ -266,7 +266,7 @@ fn inverse_transform_point(point: [f32; 2], transform: [f32; 6]) -> [f32; 2] {
     ]
 }
 
-fn inverse_transform(transform: [f32; 6]) -> Option<[f32; 6]> {
+pub(super) fn inverse_transform(transform: [f32; 6]) -> Option<[f32; 6]> {
     let [a, b, c, d, e, f] = transform;
     let determinant = a * d - b * c;
     (determinant.abs() > f32::EPSILON).then_some([
@@ -303,16 +303,18 @@ fn gradient_position(brush: &Brush, point: [f32; 2]) -> f32 {
 }
 
 fn sample_stops(stops: &[(f32, jag_draw::ColorLinPremul)], t: f32) -> [u8; 4] {
-    let upper = stops
-        .iter()
-        .position(|stop| stop.0 >= t)
-        .unwrap_or(stops.len() - 1);
+    if t < stops[0].0 {
+        return stops[0].1.to_srgba_u8();
+    }
+    let Some(upper) = stops.iter().position(|stop| stop.0 > t) else {
+        return stops[stops.len() - 1].1.to_srgba_u8();
+    };
     let lower = upper.saturating_sub(1);
     let span = stops[upper].0 - stops[lower].0;
     let mix = if span > f32::EPSILON {
         ((t - stops[lower].0) / span).clamp(0.0, 1.0)
     } else {
-        0.0
+        1.0
     };
     let a = stops[lower].1.to_srgba_u8();
     let b = stops[upper].1.to_srgba_u8();

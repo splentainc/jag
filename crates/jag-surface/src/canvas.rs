@@ -8,6 +8,7 @@ use jag_draw::{
 mod committed;
 mod helpers;
 mod images_state;
+mod inverse_mask;
 mod masks;
 mod scroll_scene;
 mod shapes;

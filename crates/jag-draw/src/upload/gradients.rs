@@ -88,24 +88,28 @@ fn srgb_to_linear(c: f32) -> f32 {
 }
 
 pub fn lerp_color(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
-    // CSS gradients interpolate in sRGB by default.
-    let ar = linear_to_srgb(a[0]);
-    let ag = linear_to_srgb(a[1]);
-    let ab = linear_to_srgb(a[2]);
-    let br = linear_to_srgb(b[0]);
-    let bg = linear_to_srgb(b[1]);
-    let bb = linear_to_srgb(b[2]);
-
-    let rr = ar + (br - ar) * t;
-    let rg = ag + (bg - ag) * t;
-    let rb = ab + (bb - ab) * t;
-
-    [
-        srgb_to_linear(rr),
-        srgb_to_linear(rg),
-        srgb_to_linear(rb),
-        a[3] + (b[3] - a[3]) * t,
-    ]
+    // CSS interpolates premultiplied channels in encoded sRGB. Decode only
+    // after interpolation; converting premultiplied linear channels directly
+    // creates dark fringes when an endpoint is transparent.
+    let alpha = a[3] + (b[3] - a[3]) * t;
+    if alpha <= 0.0 {
+        return [0.0; 4];
+    }
+    let encoded = |c: [f32; 4], i| {
+        if c[3] > 0.0 {
+            linear_to_srgb(c[i] / c[3]) * c[3]
+        } else {
+            0.0
+        }
+    };
+    let mut result = [0.0; 4];
+    for i in 0..3 {
+        let start = encoded(a, i);
+        let value = start + (encoded(b, i) - start) * t;
+        result[i] = srgb_to_linear(value / alpha) * alpha;
+    }
+    result[3] = alpha;
+    result
 }
 
 pub fn sample_gradient_stops(stops: &[(f32, [f32; 4])], t: f32) -> [f32; 4] {
