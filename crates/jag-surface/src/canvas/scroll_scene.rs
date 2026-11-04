@@ -52,6 +52,38 @@ impl Canvas {
         }) {
             return None;
         }
+        Some(self.wrap_scroll_scene(capture))
+    }
+
+    /// Freeze this canvas's content for compositor scrolling. Generated/URL
+    /// mask bindings stay owned by this immutable canvas and its clones. Unlike
+    /// cross-canvas capture, this does not export a resource-less reusable scene.
+    pub fn finish_scroll_scene_commit(&mut self, capture: ScrollSceneCapture) -> bool {
+        let after = self.capture_side_channels();
+        if after
+            .iter()
+            .zip(capture.side_channels)
+            .enumerate()
+            .any(|(i, (a, b))| !matches!(i, 5 | 6) && *a != b)
+        {
+            return false;
+        }
+        // A backdrop's effective device clip mixes fixed viewport and moving
+        // ancestor clips. Keep it producer-owned until clip ownership is bound.
+        if self.display_list().commands[capture.start..].iter().any(|command| {
+            matches!(command, jag_draw::Command::BackdropFilter(draw) if draw.clip.is_some())
+        }) {
+            return false;
+        }
+        self.wrap_scroll_scene(capture);
+        true
+    }
+
+    fn wrap_scroll_scene(
+        &mut self,
+        capture: ScrollSceneCapture,
+    ) -> std::sync::Arc<jag_draw::ScrollScene> {
+        let commands = &self.display_list().commands[capture.start..];
         let scene = std::sync::Arc::new(jag_draw::ScrollScene::new(
             commands.to_vec().into(),
             capture.base,
@@ -60,7 +92,7 @@ impl Canvas {
         ));
         self.painter.truncate_commands(capture.start);
         self.replay_scroll_scene(&scene, &Default::default());
-        Some(scene)
+        scene
     }
 
     pub fn can_replay_scroll_scene(&self, scene: &jag_draw::ScrollScene) -> bool {

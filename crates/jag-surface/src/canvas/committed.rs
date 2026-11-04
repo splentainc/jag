@@ -38,7 +38,10 @@ impl Canvas {
     /// transforms. They remain displayable while the producer is busy, but
     /// input requiring their movement must be routed to that producer.
     pub fn supports_independent_scroll(&self) -> bool {
-        self.capture_side_channels() == [0; 9]
+        self.capture_side_channels()
+            .iter()
+            .enumerate()
+            .all(|(i, count)| matches!(i, 5 | 6) || *count == 0)
             && self
                 .display_list()
                 .commands
@@ -126,6 +129,114 @@ mod tests {
         assert!(inputs.is_empty());
         assert_eq!(canvas.viewport().width, 320);
         canvas.draw_image("live.png", [0., 0.], [20., 20.], ImageFitMode::Contain, 0);
+        assert!(!canvas.supports_independent_scroll());
+    }
+
+    #[test]
+    fn committed_masks_keep_bindings_while_cross_canvas_capture_stays_rejected() {
+        use jag_draw::{
+            ExternalTextureId, FilterEffect, MaskComposite, MaskCompositeLayer, MaskMode, Rect,
+        };
+        let mut canvas = test_canvas();
+        let committed = canvas.begin_scroll_scene_capture();
+        let cross_canvas = canvas.begin_scroll_scene_capture();
+        canvas.push_scroll_layer("root", [0., 0.]);
+        let rect = Rect {
+            x: 20.,
+            y: 40.,
+            w: 60.,
+            h: 20.,
+        };
+        let mask = canvas
+            .resolve_url_mask(
+                "mask.svg",
+                rect,
+                rect,
+                [60., 20.],
+                [false, false],
+                MaskMode::Alpha,
+            )
+            .unwrap();
+        canvas
+            .generated_mask_textures
+            .push(super::super::GeneratedMaskTexture {
+                id: ExternalTextureId(123),
+                width: 1,
+                height: 1,
+                pixels: vec![255; 4],
+            });
+        canvas.push_filter(FilterEffect::MaskGroup(jag_draw::MaskGroupEffect {
+            layers: vec![MaskCompositeLayer {
+                mask,
+                composite: MaskComposite::Add,
+                text_clip: false,
+            }],
+        }));
+        canvas.fill_rect(
+            20.,
+            40.,
+            60.,
+            20.,
+            Brush::Solid(ColorLinPremul::from_srgba_u8([255, 0, 0, 255])),
+            0,
+        );
+        canvas.pop_filter();
+        canvas.pop_scroll_layer();
+        assert!(canvas.finish_scroll_scene_capture(cross_canvas).is_none());
+        assert!(canvas.finish_scroll_scene_commit(committed));
+        assert!(canvas.supports_independent_scroll());
+        let moved = canvas.recompose(canvas.viewport(), 1., [0., -30.], &Default::default());
+        assert_eq!(
+            moved.url_mask_textures[0].id,
+            canvas.url_mask_textures[0].id
+        );
+        assert_eq!(moved.generated_mask_textures[0].pixels, vec![255; 4]);
+        let Command::DrawScrollScene {
+            scene,
+            base,
+            inputs,
+        } = &moved.display_list().commands[0]
+        else {
+            panic!("scene")
+        };
+        let resolved = scene.resolve(*base, inputs);
+        let mask = resolved
+            .iter()
+            .find_map(|command| match command {
+                Command::PushFilter(FilterEffect::MaskGroup(group)) => Some(group.layers[0].mask),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(mask.rect.y, 10.);
+        assert_eq!(mask.mapping.unwrap().inverse_transform[5], 30.);
+        let Command::DrawScrollScene {
+            scene,
+            base,
+            inputs,
+        } = &canvas.display_list().commands[0]
+        else {
+            panic!("original")
+        };
+        let original = scene.resolve(*base, inputs);
+        assert!(original.iter().any(|c|matches!(c,Command::PushFilter(FilterEffect::MaskGroup(g)) if g.layers[0].mask.rect.y==40.)));
+    }
+
+    #[test]
+    fn clipped_backdrop_remains_producer_owned() {
+        let mut canvas = test_canvas();
+        let capture = canvas.begin_scroll_scene_capture();
+        canvas.push_scroll_layer("root", [0., 0.]);
+        let rect = jag_draw::Rect {
+            x: 0.,
+            y: 0.,
+            w: 100.,
+            h: 100.,
+        };
+        canvas.push_clip_rect(rect);
+        canvas.backdrop_blur_rect(rect, 3., 0);
+        canvas.pop_clip();
+        canvas.pop_scroll_layer();
+        assert!(!canvas.finish_scroll_scene_commit(capture));
         assert!(!canvas.supports_independent_scroll());
     }
 }

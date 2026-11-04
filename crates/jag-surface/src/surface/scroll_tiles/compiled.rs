@@ -72,7 +72,9 @@ impl CompiledScene {
                 && !matches!(command, Command::PushTransform(_) | Command::PopTransform)
                 || matches!(
                     command,
-                    Command::BackdropFilter(_) | Command::DrawExternalTexture { .. }
+                    Command::BackdropFilter(_)
+                        | Command::BoxShadow { .. }
+                        | Command::DrawExternalTexture { .. }
                 )
                 || command
                     .z_index()
@@ -137,6 +139,7 @@ impl CompiledScene {
                 | Command::PushFilter(_)
                 | Command::PopFilter
                 | Command::BackdropFilter(_)
+                | Command::BoxShadow { .. }
                 | Command::DrawExternalTexture { .. } => result.ops.push(Op::Draw {
                     command: command.clone(),
                     owner,

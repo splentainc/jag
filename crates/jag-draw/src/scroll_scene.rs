@@ -114,6 +114,18 @@ impl ScrollScene {
 }
 
 pub fn translate_command(command: &mut Command, delta: [f32; 2]) {
+    if let Command::PushFilter(effect) = command {
+        match effect {
+            crate::FilterEffect::Mask(mask) => translate_mask(mask, delta),
+            crate::FilterEffect::MaskGroup(group) => {
+                for layer in &mut group.layers {
+                    translate_mask(&mut layer.mask, delta);
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
     if let Command::DrawSpatialLayer(layer) = command {
         let layer = std::sync::Arc::make_mut(layer);
         layer.matrix = crate::spatial::Matrix4::from_array(layer.matrix)
@@ -155,4 +167,14 @@ pub fn translate_command(command: &mut Command, delta: [f32; 2]) {
     };
     transform.m[4] += delta[0];
     transform.m[5] += delta[1];
+}
+
+fn translate_mask(mask: &mut crate::MaskEffect, delta: [f32; 2]) {
+    mask.rect.x += delta[0];
+    mask.rect.y += delta[1];
+    if let Some(mapping) = &mut mask.mapping {
+        let [a, b, c, d, e, f] = mapping.inverse_transform;
+        mapping.inverse_transform[4] = e - a * delta[0] - c * delta[1];
+        mapping.inverse_transform[5] = f - b * delta[0] - d * delta[1];
+    }
 }
