@@ -18,6 +18,9 @@ mod text;
 mod text_extra;
 
 #[cfg(test)]
+mod inverse_mask_tests;
+
+#[cfg(test)]
 mod tests;
 
 /// Rounded-rect clip region in device pixels, passed to the image shader
