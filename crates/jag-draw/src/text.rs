@@ -203,6 +203,7 @@ include!("text/providers.rs");
 include!("text/constructors.rs");
 include!("text/raster_masks.rs");
 include!("text/family_resolution.rs");
+include!("text/family_resolution_tests.rs");
 include!("text/fallback.rs");
 include!("text/font_selection.rs");
 include!("text/variations.rs");

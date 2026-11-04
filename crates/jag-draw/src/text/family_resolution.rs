@@ -19,9 +19,8 @@ impl JagTextProvider {
                     Family::Name("Times"),
                 ],
                 GenericFamily::SansSerif => vec![
-                    Family::Name("System Font"),
-                    Family::Name("SF Pro Text"),
-                    Family::Name("Segoe UI"),
+                    // CSS sans-serif follows the browser's generic font;
+                    // platform UI faces belong to system-ui below.
                     Family::SansSerif,
                     Family::Name("Arial"),
                     Family::Name("Helvetica Neue"),

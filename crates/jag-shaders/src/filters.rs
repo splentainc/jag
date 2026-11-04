@@ -227,7 +227,10 @@ fn srgb_to_linear(value: vec3<f32>) -> vec3<f32> {
 @fragment fn fs_main(input: VsOut) -> @location(0) vec4<f32> {
     // The filter matrix applies to sRGB values; a gamma-blend target's
     // source already holds them.
-    let premul = textureSample(source, source_sampler, input.uv);
+    // Render targets use top-left texels; the fullscreen triangle's UV has
+    // its origin at the NDC bottom-left. Every color pass preserves rows.
+    let uv = vec2(input.uv.x, 1.0 - input.uv.y);
+    let premul = textureSample(source, source_sampler, uv);
     let unpremul = premul.rgb / max(premul.a, 0.00001);
     let straight = vec4(select(linear_to_srgb(unpremul), unpremul, GAMMA_BLEND), premul.a);
     let filtered = clamp(vec4(
