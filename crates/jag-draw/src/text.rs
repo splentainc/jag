@@ -205,6 +205,7 @@ include!("text/raster_masks.rs");
 include!("text/family_resolution.rs");
 include!("text/family_resolution_tests.rs");
 include!("text/fallback.rs");
+include!("text/fallback_tests.rs");
 include!("text/font_selection.rs");
 include!("text/variations.rs");
 include!("text/jag_provider.rs");

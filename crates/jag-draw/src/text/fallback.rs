@@ -209,6 +209,32 @@ impl JagTextProvider {
                     break;
                 }
             }
+            if resolved.is_none() {
+                // Family hints accelerate common scripts; they must not be a
+                // coverage whitelist. Discover installed faces for other scripts
+                // before falling back to the primary face's missing glyph.
+                let mut faces: Vec<_> = db
+                    .faces()
+                    .filter(|face| !face.post_script_name.eq_ignore_ascii_case("LastResort"))
+                    .collect();
+                faces.sort_by_key(|face| {
+                    (
+                        face.style != requested_style,
+                        face.weight.0.abs_diff(requested_weight),
+                        face.post_script_name.as_str(),
+                        face.index,
+                    )
+                });
+                resolved = faces.into_iter().find_map(|face| {
+                    let supports = db
+                        .with_face_data(face.id, |bytes, index| {
+                            swash::FontRef::from_index(bytes, index as usize)
+                                .is_some_and(|font| font.charmap().map(ch) != 0)
+                        })
+                        .unwrap_or(false);
+                    supports.then(|| Self::load_face_from_db(face)).flatten()
+                });
+            }
         }
 
         self.char_fallback_cache
