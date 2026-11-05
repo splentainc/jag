@@ -11,6 +11,7 @@ mod helpers;
 mod images_state;
 mod inverse_mask;
 mod mask_cache;
+mod mask_size;
 mod masks;
 mod scroll_scene;
 mod shapes;
@@ -94,6 +95,7 @@ pub struct Canvas {
     // emitted through the display-list command stream.
     pub(crate) opacity_stack: Vec<f32>,
     pub(crate) generated_mask_textures: Vec<GeneratedMaskTexture>,
+    pub(crate) max_mask_dimension: u32,
     pub(crate) url_mask_textures: Vec<UrlMaskTexture>,
     pub(crate) next_generated_mask_texture_id: u64,
 }

@@ -36,6 +36,7 @@ impl JagSurface {
             scrim_draws: Vec::new(),
             opacity_stack: vec![1.0],
             generated_mask_textures: Vec::new(),
+            max_mask_dimension: self.device.limits().max_texture_dimension_2d,
             url_mask_textures: Vec::new(),
             next_generated_mask_texture_id: 0x6000_0000_0000_0000,
         }

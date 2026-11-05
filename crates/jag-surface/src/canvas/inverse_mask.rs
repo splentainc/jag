@@ -12,8 +12,11 @@ impl Canvas {
         };
         let mapped = super::masks::transformed_bounds(bounds, transform);
         let scale = super::mask_cache::raster_scale(transform, self.dpi_scale);
-        let width = (bounds.w * scale).ceil().max(1.0) as u32;
-        let height = (bounds.h * scale).ceil().max(1.0) as u32;
+        let Some([width, height]) =
+            super::mask_size::raster_size([bounds.w, bounds.h], scale, self.max_mask_dimension)
+        else {
+            return false;
+        };
         let identity = [1., 0., 0., 1., 0., 0.];
         let local_bounds = Rect {
             x: 0.,

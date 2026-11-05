@@ -31,12 +31,14 @@ impl JagSurface {
                 self.mask_uploads.entries.push_back(entry);
                 continue;
             }
+            let (upload_size, pixels) =
+                mask.upload_pixels(self.device.limits().max_texture_dimension_2d);
             let texture = create_texture_2d(
                 &self.device,
                 "generated-css-mask",
                 Texture2dSpec {
-                    width: mask.width,
-                    height: mask.height,
+                    width: upload_size[0],
+                    height: upload_size[1],
                     format: jag_draw::wgpu::TextureFormat::Rgba8UnormSrgb,
                     usage: jag_draw::wgpu::TextureUsages::TEXTURE_BINDING
                         | jag_draw::wgpu::TextureUsages::COPY_DST,
@@ -45,9 +47,9 @@ impl JagSurface {
             upload_texture_2d(
                 &self.queue,
                 &texture,
-                [mask.width, mask.height],
-                mask.width * 4,
-                &mask.pixels,
+                upload_size,
+                upload_size[0] * 4,
+                &pixels,
             );
             let view = create_default_texture_view(&texture);
             register_external_texture(&mut self.pass, mask.id, view.clone());

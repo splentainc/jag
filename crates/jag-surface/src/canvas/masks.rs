@@ -62,8 +62,11 @@ impl Canvas {
         // mapping, repetition and paint clip. Rotation/translation no longer
         // rasterizes a new screen-sized buffer on each animation frame.
         let scale = super::mask_cache::raster_scale(transform, self.dpi_scale);
-        let width = (tile_rect.w * scale).ceil().max(1.0) as u32;
-        let height = (tile_rect.h * scale).ceil().max(1.0) as u32;
+        let [width, height] = super::mask_size::raster_size(
+            [tile_rect.w, tile_rect.h],
+            scale,
+            self.max_mask_dimension,
+        )?;
         let identity = [1., 0., 0., 1., 0., 0.];
         let step = [tile_rect.w, tile_rect.h];
         let key = super::mask_cache::gradient(
