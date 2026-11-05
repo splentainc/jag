@@ -417,3 +417,9 @@ fn composite_slots_update_placement_depth_and_texture_without_aliasing_draws() {
     drop(views);
     surface.pass_manager().clear_external_textures();
 }
+
+#[path = "retained_layers/masks.rs"]
+mod masks;
+
+#[path = "retained_layers/spatial.rs"]
+mod spatial;

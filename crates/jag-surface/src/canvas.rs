@@ -5,10 +5,12 @@ use jag_draw::{
     Viewport,
 };
 
+mod clips;
 mod committed;
 mod helpers;
 mod images_state;
 mod inverse_mask;
+mod mask_cache;
 mod masks;
 mod scroll_scene;
 mod shapes;
@@ -107,7 +109,7 @@ pub(crate) struct GeneratedMaskTexture {
     pub id: jag_draw::ExternalTextureId,
     pub width: u32,
     pub height: u32,
-    pub pixels: Vec<u8>,
+    pub pixels: Arc<[u8]>,
 }
 
 /// Scrim drawing modes.

@@ -31,6 +31,24 @@ fn builtin_svg_bytes(path: &Path) -> Option<&'static [u8]> {
     SVG_BYTES_PROVIDER.get().and_then(|f| f(path))
 }
 
+/// Inline markup stays in memory, including successive animation samples.
+/// The raster cache bounds their lifetime just like disk-backed SVG assets.
+pub(crate) fn svg_bytes(path: &Path) -> Option<Vec<u8>> {
+    if let Some(markup) = path.to_str().and_then(|p| p.strip_prefix("inline-svg:")) {
+        return Some(markup.as_bytes().to_vec());
+    }
+    std::fs::read(path)
+        .ok()
+        .or_else(|| builtin_svg_bytes(path).map(<[u8]>::to_vec))
+}
+pub(crate) fn svg_resource_dir(path: &Path) -> Option<PathBuf> {
+    if path.to_str().is_some_and(|p| p.starts_with("inline-svg:")) {
+        None
+    } else {
+        path.parent().map(Path::to_path_buf)
+    }
+}
+
 /// Optional style overrides for SVG rendering
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SvgStyle {
@@ -212,13 +230,7 @@ impl SvgRasterCache {
         // Read SVG data. Prefer the actual file on disk when it exists,
         // falling back to built-in embedded bytes for chrome icons that
         // may not have a corresponding file (e.g. bare "icon.svg" names).
-        let mut data: Vec<u8> = if path.exists() {
-            std::fs::read(path).ok()?
-        } else if let Some(bytes) = builtin_svg_bytes(path) {
-            bytes.to_vec()
-        } else {
-            std::fs::read(path).ok()?
-        };
+        let mut data = svg_bytes(path)?;
 
         // Apply style overrides by modifying the SVG XML if needed
         if style.fill.is_some() || style.stroke.is_some() || style.stroke_width.is_some() {
@@ -233,7 +245,7 @@ impl SvgRasterCache {
             &data,
             scale_b.as_f32(),
             &fonts,
-            path.parent().map(|p| p.to_path_buf()),
+            svg_resource_dir(path),
             self.max_tex_size,
         )?;
         let w = pixmap.width();
@@ -242,27 +254,7 @@ impl SvgRasterCache {
         // texture in linear light, so first undo that premultiplication, then
         // premultiply in linear light and encode for the texture. This also
         // makes bilinear filtering preserve color across transparent edges.
-        let rgba: Vec<u8> = pixmap
-            .pixels()
-            .iter()
-            .flat_map(|pixel| {
-                let straight = pixel.demultiply();
-                let linear = ColorLinPremul::from_srgba_u8([
-                    straight.red(),
-                    straight.green(),
-                    straight.blue(),
-                    straight.alpha(),
-                ]);
-                let encoded: palette::Srgb<f32> =
-                    palette::Srgb::from_linear(palette::LinSrgb::new(linear.r, linear.g, linear.b));
-                [
-                    (encoded.red * 255.0).round() as u8,
-                    (encoded.green * 255.0).round() as u8,
-                    (encoded.blue * 255.0).round() as u8,
-                    straight.alpha(),
-                ]
-            })
-            .collect();
+        let rgba = crate::svg_pixels::rgba(pixmap.pixels());
 
         let tex = create_texture_2d(
             &self.device,

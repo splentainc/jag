@@ -6,6 +6,8 @@ use jag_draw::{
     spatial::{self, Matrix4, SpatialLayer},
 };
 use std::sync::Arc;
+#[path = "spatial_visibility.rs"]
+mod visibility;
 fn contains_spatial(commands: &[Command]) -> bool {
     commands.iter().any(|c| match c {
         Command::DrawSpatialLayer(_) => true,
@@ -50,6 +52,7 @@ impl JagSurface {
         commands: Vec<Command>,
         viewport: Viewport,
         provider: Option<&Arc<dyn TextProvider + Send + Sync>>,
+        key: &str,
     ) -> Result<Option<(ExternalTextureId, Rect)>> {
         let commands = self.flatten_scroll_layers(&commands, viewport, provider)?;
         let commands = self.flatten_unbounded_effect_groups(&commands, viewport, provider)?;
@@ -75,6 +78,42 @@ impl JagSurface {
             origin: [x, y],
             logical_size: [w as f32 / scale, h as f32 / scale],
             pixel_size: [w, h],
+        };
+        // Small animated details must not rerasterize every glyph, border and
+        // background of an otherwise stable card. Cache its local ink in tiles
+        // before projecting the complete plane. Its own bounds, not the window
+        // clip, define visibility in these unprojected coordinates.
+        let commands = if self.retained_layers.is_enabled()
+            && commands
+                .iter()
+                .filter(|c| {
+                    matches!(
+                        c,
+                        Command::DrawText { .. }
+                            | Command::DrawRect { .. }
+                            | Command::DrawRoundedRect { .. }
+                            | Command::StrokeRoundedRect { .. }
+                    )
+                })
+                .count()
+                > 4
+        {
+            let mut tiled = Vec::with_capacity(commands.len() + 2);
+            tiled.push(Command::PushScrollLayer {
+                key: key.into(),
+                origin: [0., 0.],
+                binding: jag_draw::ScrollBinding {
+                    key: key.into(),
+                    value: [0., 0.],
+                    factor: [0., 0.],
+                    basis: [1., 0., 0., 1.],
+                },
+            });
+            tiled.extend(commands);
+            tiled.push(Command::PopScrollLayer);
+            self.flatten_scroll_layers_in_rect(&tiled, bounds, scale, provider)?
+        } else {
+            commands
         };
         let id = self.render_effect_group_layer(
             geometry,
@@ -102,6 +141,8 @@ impl JagSurface {
         provider: Option<&Arc<dyn TextProvider + Send + Sync>>,
         planes: &mut Vec<Plane>,
         apply_opacity: bool,
+        visibility_transform: Option<Matrix4>,
+        key: &str,
     ) -> Result<()> {
         let mut layer = layer.clone();
         layer.commands = expand_retained(&layer.commands);
@@ -127,8 +168,29 @@ impl JagSurface {
                     }
                 })
                 .collect();
-            let commands = self.flatten_spatial_layers(&commands, viewport, provider)?;
-            if let Some((id, bounds)) = self.spatial_raster(commands, viewport, provider)? {
+            // A parent filter can make an offscreen child contribute visible
+            // pixels. Cull that group only after applying its filter bounds.
+            let child_visibility = visibility_transform
+                .filter(|_| !visibility::expands(&commands))
+                .map(|outer| spatial::multiply(outer, matrix));
+            let commands = self.flatten_spatial_layers_in(
+                &commands,
+                viewport,
+                provider,
+                child_visibility,
+                key,
+            )?;
+            if !visibility::visible(
+                &commands,
+                visibility_transform.map(|outer| spatial::multiply(outer, matrix)),
+                viewport,
+                jag_draw::logical_multiplier(self.logical_pixels, self.dpi_scale, self.ui_scale),
+            )? {
+                return Ok(());
+            }
+            if let Some((id, bounds)) =
+                self.spatial_raster(commands, viewport, provider, &format!("{key}/flat"))?
+            {
                 let quad = spatial::quad(matrix, bounds);
                 if let Some(bounds) = spatial::bounds(&quad) {
                     planes.push(Plane {
@@ -149,7 +211,14 @@ impl JagSurface {
             .filter(|c| !matches!(c, Command::DrawSpatialLayer(_)))
             .cloned()
             .collect();
-        if let Some((id, bounds)) = self.spatial_raster(own, viewport, provider)? {
+        if visibility::visible(
+            &own,
+            visibility_transform.map(|outer| spatial::multiply(outer, matrix)),
+            viewport,
+            jag_draw::logical_multiplier(self.logical_pixels, self.dpi_scale, self.ui_scale),
+        )? && let Some((id, bounds)) =
+            self.spatial_raster(own, viewport, provider, &format!("{key}/own"))?
+        {
             let quad = spatial::quad(matrix, bounds);
             if let Some(bounds) = spatial::bounds(&quad) {
                 planes.push(Plane {
@@ -161,9 +230,18 @@ impl JagSurface {
             }
         }
         let child_matrix = spatial::multiply(matrix, Matrix4::from_array(layer.perspective));
-        for command in &layer.commands {
+        for (index, command) in layer.commands.iter().enumerate() {
             if let Command::DrawSpatialLayer(child) = command {
-                self.spatial_planes(child, child_matrix, viewport, provider, planes, true)?;
+                self.spatial_planes(
+                    child,
+                    child_matrix,
+                    viewport,
+                    provider,
+                    planes,
+                    true,
+                    visibility_transform,
+                    &format!("{key}/{index}"),
+                )?;
             }
         }
         Ok(())
@@ -174,14 +252,31 @@ impl JagSurface {
         viewport: Viewport,
         provider: Option<&Arc<dyn TextProvider + Send + Sync>>,
     ) -> Result<Vec<Command>> {
+        self.flatten_spatial_layers_in(
+            commands,
+            viewport,
+            provider,
+            Some(Matrix4::identity()),
+            "spatial",
+        )
+    }
+    fn flatten_spatial_layers_in(
+        &mut self,
+        commands: &[Command],
+        viewport: Viewport,
+        provider: Option<&Arc<dyn TextProvider + Send + Sync>>,
+        visibility_transform: Option<Matrix4>,
+        parent_key: &str,
+    ) -> Result<Vec<Command>> {
         let mut result = Vec::new();
         let commands = expand_retained(commands);
-        for command in &commands {
+        for (index, command) in commands.iter().enumerate() {
             let Command::DrawSpatialLayer(layer) = command else {
                 result.push(command.clone());
                 continue;
             };
             let mut planes = Vec::new();
+            let key = format!("{parent_key}/{index}");
             self.spatial_planes(
                 layer,
                 Matrix4::identity(),
@@ -189,6 +284,8 @@ impl JagSurface {
                 provider,
                 &mut planes,
                 false,
+                visibility_transform,
+                &key,
             )?;
             planes.sort_by(|a, b| {
                 let depth = |p: &Plane| {
@@ -219,7 +316,9 @@ impl JagSurface {
                         .map(|v| [v[0], v[1], -(v[2] - middle * v[3]) / span * 0.8, v[3]]),
                 })
                 .collect();
-            if let Some((texture_id, rect)) = self.spatial_raster(projected, viewport, provider)? {
+            if let Some((texture_id, rect)) =
+                self.spatial_raster(projected, viewport, provider, &format!("{key}/composite"))?
+            {
                 result.push(Command::DrawExternalTexture {
                     rect,
                     texture_id,
@@ -227,7 +326,7 @@ impl JagSurface {
                     transform: Transform2D::identity(),
                     opacity: 1.,
                     premultiplied: true,
-                    rounded_clip: None,
+                    rounded_clip: layer.rounded_clip,
                     clip: layer.clip,
                 });
             }

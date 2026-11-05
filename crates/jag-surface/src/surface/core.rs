@@ -51,6 +51,7 @@ impl JagSurface {
         let allocator = RenderAllocator::new(device.clone());
 
         Self {
+            mask_uploads: Default::default(),
             device,
             queue,
             surface_format,

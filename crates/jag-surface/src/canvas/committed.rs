@@ -163,7 +163,7 @@ mod tests {
                 id: ExternalTextureId(123),
                 width: 1,
                 height: 1,
-                pixels: vec![255; 4],
+                pixels: vec![255; 4].into(),
             });
         canvas.push_filter(FilterEffect::MaskGroup(jag_draw::MaskGroupEffect {
             layers: vec![MaskCompositeLayer {
@@ -190,7 +190,7 @@ mod tests {
             moved.url_mask_textures[0].id,
             canvas.url_mask_textures[0].id
         );
-        assert_eq!(moved.generated_mask_textures[0].pixels, vec![255; 4]);
+        assert_eq!(&*moved.generated_mask_textures[0].pixels, &[255; 4]);
         let Command::DrawScrollScene {
             scene,
             base,

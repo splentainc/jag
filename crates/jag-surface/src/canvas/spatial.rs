@@ -1,5 +1,5 @@
 //! Capture balanced CSS planes without routing text/images through side channels.
-use super::Canvas;
+use super::{Canvas, RoundedRectClip};
 use jag_draw::{
     Command, Transform2D,
     spatial::{self, Matrix4, SpatialLayer},
@@ -14,6 +14,8 @@ pub(crate) struct SpatialCapture {
     perspective: [f32; 16],
     preserve: bool,
     backface: bool,
+    clips: Vec<Option<jag_draw::Rect>>,
+    rounded_clips: Vec<Option<RoundedRectClip>>,
 }
 impl Canvas {
     pub fn push_spatial_layer(
@@ -54,6 +56,12 @@ impl Canvas {
             Transform2D::identity()
         };
         self.push_transform(inverse);
+        // The plane is recorded in its own coordinate system. Ambient clips
+        // belong to the final projected plane, not to its unprojected ink.
+        // Keeping a viewport clip here discards artwork below the viewport
+        // before the scroll/3D transform can bring it into view.
+        let clips = std::mem::replace(&mut self.clip_stack, vec![None]);
+        let rounded_clips = std::mem::replace(&mut self.rounded_clip_stack, vec![None]);
         let start = self.command_count();
         self.push_opacity(1.);
         self.spatial_layers.push(SpatialCapture {
@@ -64,6 +72,8 @@ impl Canvas {
             perspective,
             preserve,
             backface,
+            clips,
+            rounded_clips,
         });
     }
     pub fn pop_spatial_layer(&mut self) {
@@ -73,13 +83,25 @@ impl Canvas {
             self.display_list().commands[capture.start + 1..self.command_count() - 1].to_vec();
         self.painter.truncate_commands(capture.start);
         self.pop_transform();
-        let z = commands
-            .iter()
-            .filter_map(Command::z_index)
-            .min()
-            .unwrap_or(0);
+        self.clip_stack = capture.clips;
+        self.rounded_clip_stack = capture.rounded_clips;
+        // An empty child plane must not introduce a synthetic z=0 into its
+        // parent's paint order. Invisible hover/reveal children otherwise
+        // move the entire 3D context behind the document background.
+        let Some(z) = commands.iter().filter_map(Command::z_index).min() else {
+            return;
+        };
         self.extend_commands(&[Command::DrawSpatialLayer(Arc::new(SpatialLayer {
             clip: self.clip_stack.last().copied().flatten(),
+            rounded_clip: self
+                .rounded_clip_stack
+                .iter()
+                .rev()
+                .find_map(|c| *c)
+                .map(|c| jag_draw::RoundedRectClipGpu {
+                    rect: [c.rect.x, c.rect.y, c.rect.w, c.rect.h],
+                    radii: c.radii,
+                }),
             opacity: capture.opacity,
             matrix: capture.matrix,
             perspective: capture.perspective,

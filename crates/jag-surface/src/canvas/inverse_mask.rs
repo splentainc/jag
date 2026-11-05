@@ -11,9 +11,27 @@ impl Canvas {
             return false;
         };
         let mapped = super::masks::transformed_bounds(bounds, transform);
-        let width = (mapped.w * self.dpi_scale.max(1.0)).ceil().max(1.0) as u32;
-        let height = (mapped.h * self.dpi_scale.max(1.0)).ceil().max(1.0) as u32;
-        let pixels = outer_shadow_mask_pixels(mapped, width, height, inverse, owner);
+        let scale = super::mask_cache::raster_scale(transform, self.dpi_scale);
+        let width = (bounds.w * scale).ceil().max(1.0) as u32;
+        let height = (bounds.h * scale).ceil().max(1.0) as u32;
+        let identity = [1., 0., 0., 1., 0., 0.];
+        let local_bounds = Rect {
+            x: 0.,
+            y: 0.,
+            ..bounds
+        };
+        let local_owner = RoundedRect {
+            rect: Rect {
+                x: owner.rect.x - bounds.x,
+                y: owner.rect.y - bounds.y,
+                ..owner.rect
+            },
+            ..owner
+        };
+        let key = super::mask_cache::shadow(local_bounds, local_owner, identity, [width, height]);
+        let pixels = super::mask_cache::pixels(key, || {
+            outer_shadow_mask_pixels(local_bounds, width, height, identity, local_owner)
+        });
         let id = ExternalTextureId(self.next_generated_mask_texture_id);
         self.next_generated_mask_texture_id = self.next_generated_mask_texture_id.wrapping_add(1);
         self.generated_mask_textures.push(GeneratedMaskTexture {
@@ -26,7 +44,14 @@ impl Canvas {
             texture_id: id,
             mode: MaskMode::Alpha,
             rect: mapped,
-            mapping: None,
+            mapping: Some(jag_draw::MaskTextureMapping {
+                inverse_transform: inverse,
+                paint_rect: bounds,
+                tile_rect: bounds,
+                tile_step: [bounds.w, bounds.h],
+                repeat_axes: [false; 2],
+                flip_y: false,
+            }),
         }));
         true
     }
@@ -54,10 +79,15 @@ pub(crate) fn outer_shadow_mask_pixels(
     let local = |wx: f32, wy: f32| [a * wx + c * wy + e, b * wx + d * wy + f];
     let axis_aligned = b == 0.0 && c == 0.0;
     let r = owner.rect;
-    let corner_reach = [owner.radii.tl, owner.radii.tr, owner.radii.br, owner.radii.bl]
-        .into_iter()
-        .map(|radius| radius.min(r.w.min(r.h) / 2.0).max(0.0))
-        .fold(0.0f32, f32::max);
+    let corner_reach = [
+        owner.radii.tl,
+        owner.radii.tr,
+        owner.radii.br,
+        owner.radii.bl,
+    ]
+    .into_iter()
+    .map(|radius| radius.min(r.w.min(r.h) / 2.0).max(0.0))
+    .fold(0.0f32, f32::max);
     let column_inside: Vec<[bool; 2]> = if axis_aligned {
         (0..w)
             .map(|x| {
@@ -108,7 +138,7 @@ pub(crate) fn outer_shadow_mask_pixels(
         for x in 0..w {
             let mut outside = 0u32;
             for (wy, kind) in rows {
-                for sx in 0..2 {
+                for sx in [0, 1] {
                     let is_inside = match kind {
                         None => false,
                         Some(true) => column_inside[x][sx],

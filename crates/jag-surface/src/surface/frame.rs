@@ -16,11 +16,11 @@ impl JagSurface {
         self.pending_image_loads = false;
         self.pass.poll_image_loads(&self.queue);
         let text_provider = canvas.text_provider.clone();
+        self.reset_synthetic_external_texture_ids();
         self.register_generated_mask_textures(&canvas.generated_mask_textures);
         self.register_url_mask_textures(&canvas.url_mask_textures);
         // Build final display list from painter
         let mut list = canvas.painter.finish();
-        self.reset_synthetic_external_texture_ids();
         list.commands =
             self.flatten_spatial_layers(&list.commands, list.viewport, text_provider.as_ref())?;
         list.commands =

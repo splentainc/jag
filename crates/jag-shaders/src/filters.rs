@@ -305,7 +305,10 @@ struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     return VsOut(vec4(positions[index], 0.0, 1.0), uvs[index]);
 }
 @fragment fn fs_main(input: VsOut) -> @location(0) vec4<f32> {
-    let source_color = textureSample(source, source_sampler, input.uv);
+    // Render attachments use top-down texture rows; fullscreen filter UVs
+    // increase upward. Preserve source placement even for viewport-cropped layers.
+    let source_uv = vec2(input.uv.x, 1.0 - input.uv.y);
+    let source_color = textureSample(source, source_sampler, source_uv);
     let world = params.surface_origin + input.uv * params.surface_size;
     let local = vec2(
         dot(params.inverse_x.xyz, vec3(world, 1.0)),

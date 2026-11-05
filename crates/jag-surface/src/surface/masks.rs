@@ -5,10 +5,32 @@ use crate::gpu_texture::{
 };
 
 use super::JagSurface;
+use std::{collections::VecDeque, sync::Arc};
+
+#[derive(Default)]
+pub(super) struct MaskUploads {
+    entries: VecDeque<(Arc<[u8]>, [u32; 2], jag_draw::wgpu::TextureView, u64)>,
+    bytes: usize,
+}
 
 impl JagSurface {
     pub(super) fn register_generated_mask_textures(&mut self, masks: &[GeneratedMaskTexture]) {
         for mask in masks {
+            let size = [mask.width, mask.height];
+            if let Some(index) =
+                self.mask_uploads
+                    .entries
+                    .iter()
+                    .position(|(pixels, old_size, _, _)| {
+                        *old_size == size && Arc::ptr_eq(pixels, &mask.pixels)
+                    })
+            {
+                let entry = self.mask_uploads.entries.remove(index).unwrap();
+                register_external_texture(&mut self.pass, mask.id, entry.2.clone());
+                self.retained_layers.external_revision(mask.id, entry.3);
+                self.mask_uploads.entries.push_back(entry);
+                continue;
+            }
             let texture = create_texture_2d(
                 &self.device,
                 "generated-css-mask",
@@ -27,11 +49,24 @@ impl JagSurface {
                 mask.width * 4,
                 &mask.pixels,
             );
-            register_external_texture(
-                &mut self.pass,
-                mask.id,
-                create_default_texture_view(&texture),
-            );
+            let view = create_default_texture_view(&texture);
+            register_external_texture(&mut self.pass, mask.id, view.clone());
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+            let revision = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.retained_layers.external_revision(mask.id, revision);
+            const LIMIT: usize = 256 * 1024 * 1024;
+            if mask.pixels.len() <= LIMIT {
+                while self.mask_uploads.bytes + mask.pixels.len() > LIMIT
+                    || self.mask_uploads.entries.len() >= 128
+                {
+                    self.mask_uploads.bytes -=
+                        self.mask_uploads.entries.pop_front().unwrap().0.len();
+                }
+                self.mask_uploads.bytes += mask.pixels.len();
+                self.mask_uploads
+                    .entries
+                    .push_back((mask.pixels.clone(), size, view, revision));
+            }
         }
     }
 

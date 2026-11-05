@@ -11,6 +11,7 @@ pub struct SpatialLayer {
     pub z: i32,
     pub opacity: f32,
     pub clip: Option<Rect>,
+    pub rounded_clip: Option<crate::RoundedRectClipGpu>,
 }
 pub fn affine(m: Transform2D) -> Matrix4 {
     let [a, b, c, d, e, f] = m.m;

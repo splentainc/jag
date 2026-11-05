@@ -74,6 +74,13 @@ pub(super) struct RetainedLayers {
 }
 
 impl RetainedLayers {
+    pub fn is_enabled(&self) -> bool {
+        self.budget.bytes() != 0
+    }
+    pub fn external_revision(&mut self, id: ExternalTextureId, revision: u64) {
+        self.current.insert(id, revision);
+    }
+
     pub fn begin_frame(&mut self) {
         self.budget.begin_frame();
         self.current.clear();
@@ -115,13 +122,27 @@ impl RetainedLayers {
         if self.budget.bytes() == 0 || commands.len() > 4096 {
             return None;
         }
+        let mut children = Vec::new();
         let effect = match effect {
             SurfaceEffect::Opacity(_) => SurfaceEffect::Opacity(1.0),
             SurfaceEffect::Blur(_)
             | SurfaceEffect::ColorMatrix(_)
             | SurfaceEffect::DropShadow(_) => effect.clone(),
-            // Texture handles alone do not describe changing mask pixels.
-            SurfaceEffect::Mask(_) | SurfaceEffect::MaskGroup(_) => return None,
+            SurfaceEffect::Mask(mask) => {
+                children.push((mask.texture_id, *self.current.get(&mask.texture_id)?));
+                SurfaceEffect::Mask(local_mask(*mask, origin))
+            }
+            SurfaceEffect::MaskGroup(group) => {
+                let mut group = group.clone();
+                for layer in &mut group.layers {
+                    children.push((
+                        layer.mask.texture_id,
+                        *self.current.get(&layer.mask.texture_id)?,
+                    ));
+                    layer.mask = local_mask(layer.mask, origin);
+                }
+                SurfaceEffect::MaskGroup(group)
+            }
         };
         // Clips have already been localized, and every draw carries its full
         // transform. The structural transform stack has no remaining pixel
@@ -141,7 +162,6 @@ impl RetainedLayers {
             })
             .cloned()
             .collect();
-        let mut children = Vec::new();
         let mut has_text = false;
         let mut assets = Vec::new();
         for command in &mut commands {
@@ -215,6 +235,21 @@ impl RetainedLayers {
                     children.push((*texture_id, *self.current.get(texture_id)?));
                     rect.x -= origin[0];
                     rect.y -= origin[1];
+                    continue;
+                }
+                Command::DrawProjectedTexture {
+                    texture_id,
+                    bounds,
+                    quad,
+                    ..
+                } => {
+                    children.push((*texture_id, *self.current.get(texture_id)?));
+                    bounds.x -= origin[0];
+                    bounds.y -= origin[1];
+                    for point in quad {
+                        point[0] -= origin[0] * point[3];
+                        point[1] -= origin[1] * point[3];
+                    }
                     continue;
                 }
                 // File-backed images/SVGs need decode/asset revisions before
@@ -318,4 +353,23 @@ impl RetainedLayers {
             },
         );
     }
+}
+
+// Convert the world-to-local sampling transform into surface-local coordinates.
+// Every sampling input and the immutable texture revision participates in reuse.
+fn local_mask(mut mask: jag_draw::MaskEffect, origin: [f32; 2]) -> jag_draw::MaskEffect {
+    mask.rect.x -= origin[0];
+    mask.rect.y -= origin[1];
+    if let Some(mapping) = &mut mask.mapping {
+        let [a, b, c, d, e, f] = mapping.inverse_transform;
+        mapping.inverse_transform = [
+            a,
+            b,
+            c,
+            d,
+            e + a * origin[0] + c * origin[1],
+            f + b * origin[0] + d * origin[1],
+        ];
+    }
+    mask
 }

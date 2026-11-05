@@ -131,6 +131,28 @@ impl JagSurface {
         viewport: Viewport,
         provider: Option<&Arc<dyn TextProvider + Send + Sync>>,
     ) -> Result<Vec<Command>> {
+        let scale =
+            jag_draw::logical_multiplier(self.logical_pixels, self.dpi_scale, self.ui_scale);
+        self.flatten_scroll_layers_in_rect(
+            commands,
+            Rect {
+                x: 0.,
+                y: 0.,
+                w: viewport.width as f32 / scale,
+                h: viewport.height as f32 / scale,
+            },
+            scale,
+            provider,
+        )
+    }
+
+    pub(super) fn flatten_scroll_layers_in_rect(
+        &mut self,
+        commands: &[Command],
+        viewport_rect: Rect,
+        scale: f32,
+        provider: Option<&Arc<dyn TextProvider + Send + Sync>>,
+    ) -> Result<Vec<Command>> {
         if !commands.iter().any(|c| {
             matches!(
                 c,
@@ -139,14 +161,6 @@ impl JagSurface {
         }) {
             return Ok(commands.to_vec());
         }
-        let scale =
-            jag_draw::logical_multiplier(self.logical_pixels, self.dpi_scale, self.ui_scale);
-        let viewport_rect = Rect {
-            x: 0.0,
-            y: 0.0,
-            w: viewport.width as f32 / scale,
-            h: viewport.height as f32 / scale,
-        };
         let mut clips = vec![Clip {
             rect: viewport_rect,
             authored: viewport_rect,

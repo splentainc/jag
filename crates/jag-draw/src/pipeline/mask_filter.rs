@@ -237,11 +237,21 @@ impl MaskFilterRenderer {
             flip_y: false,
         });
         let [a, b, c, d, e, f] = mapping.inverse_transform;
+        // Filter UVs increase upward in the render target. An affine mapping
+        // must first recover scene Y, then transform into the local tile. A
+        // final texture flip alone only worked for axis-aligned masks.
+        let mapped = mask.mapping.is_some();
+        let mirror_y = 2. * surface_origin[1] + surface_size[1];
+        let (inverse_x, inverse_y) = if mapped {
+            ([a, -c, e + c * mirror_y, 0.], [b, -d, f + d * mirror_y, 0.])
+        } else {
+            ([a, c, e, 0.], [b, d, f, 0.])
+        };
         MaskParams {
             surface_origin,
             surface_size,
-            inverse_x: [a, c, e, 0.0],
-            inverse_y: [b, d, f, 0.0],
+            inverse_x,
+            inverse_y,
             paint_rect: [
                 mapping.paint_rect.x,
                 mapping.paint_rect.y,
@@ -260,7 +270,7 @@ impl MaskFilterRenderer {
                 u32::from(mask.mode == crate::MaskMode::Luminance),
                 u32::from(mapping.repeat_axes[0]),
                 u32::from(mapping.repeat_axes[1]),
-                u32::from(mapping.flip_y),
+                u32::from(mapping.flip_y ^ mapped),
             ],
         }
     }

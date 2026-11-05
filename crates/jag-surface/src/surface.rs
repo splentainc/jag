@@ -198,6 +198,7 @@ pub(crate) fn calculate_image_fit(
 /// - canvas.draw calls ...
 /// - surface.end_frame(frame, canvas);
 pub struct JagSurface {
+    mask_uploads: masks::MaskUploads,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     surface_format: wgpu::TextureFormat,

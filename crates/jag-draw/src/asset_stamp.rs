@@ -10,6 +10,9 @@ pub struct AssetStamp {
 
 impl AssetStamp {
     pub fn read(path: &Path) -> Option<Self> {
+        if path.to_str().is_some_and(|p| p.starts_with("inline-svg:")) {
+            return None;
+        }
         let metadata = std::fs::metadata(path).ok()?;
         Some(Self {
             len: metadata.len(),

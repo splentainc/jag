@@ -47,29 +47,40 @@ impl Canvas {
         mode: MaskMode,
     ) -> Option<MaskEffect> {
         let stops = gradient_stops(brush)?;
-        let [a, b, c, d, e, f] = self.current_transform().m;
-        let transform = [a, b, c, d, e, f];
-        if (a * d - b * c).abs() <= f32::EPSILON {
-            return None;
-        }
+        let transform = self.current_transform().m;
+        let inverse = inverse_transform(transform)?;
         let mapped_rect = transformed_bounds(paint_rect, transform);
-        if mapped_rect.w <= 0.0 || mapped_rect.h <= 0.0 || stops.is_empty() {
+        if mapped_rect.w <= 0.0
+            || mapped_rect.h <= 0.0
+            || stops.is_empty()
+            || tile_rect.w <= 0.0
+            || tile_rect.h <= 0.0
+        {
             return None;
         }
-        let width = (mapped_rect.w * self.dpi_scale.max(1.0)).ceil().max(1.0) as u32;
-        let height = (mapped_rect.h * self.dpi_scale.max(1.0)).ceil().max(1.0) as u32;
-        let pixels = raster_generated_gradient(
-            mapped_rect,
-            paint_rect,
+        // Generate one local tile, like a URL mask. The GPU applies the affine
+        // mapping, repetition and paint clip. Rotation/translation no longer
+        // rasterizes a new screen-sized buffer on each animation frame.
+        let scale = super::mask_cache::raster_scale(transform, self.dpi_scale);
+        let width = (tile_rect.w * scale).ceil().max(1.0) as u32;
+        let height = (tile_rect.h * scale).ceil().max(1.0) as u32;
+        let identity = [1., 0., 0., 1., 0., 0.];
+        let step = [tile_rect.w, tile_rect.h];
+        let key = super::mask_cache::gradient(
             tile_rect,
-            tile_step,
-            repeat_axes,
-            width,
-            height,
+            tile_rect,
+            step,
+            [false; 2],
             brush,
-            transform,
-            stops,
+            identity,
+            [width, height],
         );
+        let pixels = super::mask_cache::pixels(key, || {
+            raster_generated_gradient(
+                tile_rect, tile_rect, tile_rect, step, [false; 2], width, height, brush, identity,
+                stops,
+            )
+        });
         let id = ExternalTextureId(self.next_generated_mask_texture_id);
         self.next_generated_mask_texture_id = self.next_generated_mask_texture_id.wrapping_add(1);
         self.generated_mask_textures.push(GeneratedMaskTexture {
@@ -82,7 +93,14 @@ impl Canvas {
             texture_id: id,
             mode,
             rect: mapped_rect,
-            mapping: None,
+            mapping: Some(MaskTextureMapping {
+                inverse_transform: inverse,
+                paint_rect,
+                tile_rect,
+                tile_step,
+                repeat_axes,
+                flip_y: false,
+            }),
         })
     }
 

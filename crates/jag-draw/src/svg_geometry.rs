@@ -8,6 +8,28 @@
 
 use std::path::Path;
 
+/// Painted bounds in the SVG viewport, including strokes, text and filters.
+/// Uses the same font database as rasterization so cropped SVG layers retain
+/// complete glyph coverage on hosts with registered fallback fonts.
+pub fn svg_content_bounds(markup: &str) -> Option<crate::Rect> {
+    let fonts = crate::svg_fontdb::svg_font_db();
+    let mut options = usvg::Options {
+        fontdb: fonts.db,
+        ..Default::default()
+    };
+    if let Some(family) = fonts.default_family {
+        options.font_family = family;
+    }
+    let tree = usvg::Tree::from_str(markup, &options).ok()?;
+    let bounds = tree.root().abs_layer_bounding_box();
+    Some(crate::Rect {
+        x: bounds.x(),
+        y: bounds.y(),
+        w: bounds.width(),
+        h: bounds.height(),
+    })
+}
+
 /// Import result counters for basic visibility/debugging.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SvgImportStats {
@@ -183,9 +205,9 @@ pub fn import_svg_geometry_to_painter(
     path: &Path,
     z: i32,
 ) -> Option<SvgImportStats> {
-    let data = std::fs::read(path).ok()?;
+    let data = crate::svg::svg_bytes(path)?;
     let mut opt = usvg::Options::default();
-    opt.resources_dir = path.parent().map(|p| p.to_path_buf());
+    opt.resources_dir = crate::svg::svg_resource_dir(path);
     opt.fontdb = crate::svg_fontdb::svg_font_db().db;
     let tree = usvg::Tree::from_data(&data, &opt).ok()?;
     let mut stats = SvgImportStats::default();
@@ -309,9 +331,9 @@ pub fn import_svg_geometry_to_painter(
 /// Get the intrinsic pixel size of an SVG file according to usvg's parsing
 /// of width/height/viewBox. Returns (width,height) rounded to integers.
 pub fn svg_intrinsic_size(path: &Path) -> Option<(u32, u32)> {
-    let data = std::fs::read(path).ok()?;
+    let data = crate::svg::svg_bytes(path)?;
     let mut opt = usvg::Options::default();
-    opt.resources_dir = path.parent().map(|p| p.to_path_buf());
+    opt.resources_dir = crate::svg::svg_resource_dir(path);
     opt.fontdb = crate::svg_fontdb::svg_font_db().db;
     let tree = usvg::Tree::from_data(&data, &opt).ok()?;
     let size = tree.size().to_int_size();
@@ -322,9 +344,9 @@ pub fn svg_intrinsic_size(path: &Path) -> Option<(u32, u32)> {
 /// Returns true if the SVG uses features that cannot be expressed analytically
 /// (filters, patterns, masks, gradients, images, text, etc.)
 pub fn svg_requires_rasterization(path: &Path) -> Option<bool> {
-    let data = std::fs::read(path).ok()?;
+    let data = crate::svg::svg_bytes(path)?;
     let mut opt = usvg::Options::default();
-    opt.resources_dir = path.parent().map(|p| p.to_path_buf());
+    opt.resources_dir = crate::svg::svg_resource_dir(path);
     opt.fontdb = crate::svg_fontdb::svg_font_db().db;
     let tree = usvg::Tree::from_data(&data, &opt).ok()?;
 
