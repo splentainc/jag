@@ -8,6 +8,69 @@ fn matrix(x: f32, y: f32) -> [f32; 16] {
 }
 
 #[test]
+fn coplanar_child_backface_keeps_accumulated_parent_orientation() {
+    let (mut surface, _) = surfaces();
+    surface.set_logical_pixels(true);
+    for facing in [1., -1.] {
+        let mut parent = matrix(if facing < 0. { 120. } else { 0. }, 0.);
+        parent[0] = facing;
+        parent[10] = facing;
+        let mut c = surface.begin_frame(120, 120);
+        c.clear(ColorLinPremul::from_srgba_u8([255; 4]));
+        c.push_spatial_layer(parent, Matrix4::identity().to_array(), true, false);
+        c.push_spatial_layer(matrix(0., 0.), Matrix4::identity().to_array(), false, true);
+        c.fill_rect(
+            20.,
+            20.,
+            80.,
+            80.,
+            Brush::Solid(ColorLinPremul::from_srgba_u8([255, 0, 0, 255])),
+            1,
+        );
+        c.pop_spatial_layer();
+        c.pop_spatial_layer();
+        let (_, _, pixels) = surface.end_frame_headless(c).unwrap();
+        let expected = if facing > 0. {
+            [255, 0, 0, 255]
+        } else {
+            [255; 4]
+        };
+        assert_eq!(&pixels[(60 * 120 + 60) * 4..][..4], &expected);
+    }
+}
+
+#[test]
+fn intersecting_spatial_planes_keep_per_pixel_depth() {
+    let (mut retained, mut fresh) = surfaces();
+    for surface in [&mut retained, &mut fresh] {
+        surface.set_logical_pixels(true);
+        let mut c = surface.begin_frame(120, 120);
+        c.clear(ColorLinPremul::from_srgba_u8([255; 4]));
+        c.push_spatial_layer(matrix(0., 0.), Matrix4::identity().to_array(), true, false);
+        for (slope, color, z) in [(0.25, [255, 0, 0, 255], 1), (-0.25, [0, 0, 255, 255], 2)] {
+            let mut transform = matrix(0., 0.);
+            transform[2] = slope;
+            transform[14] = -60. * slope;
+            c.push_spatial_layer(transform, Matrix4::identity().to_array(), false, false);
+            c.fill_rect(
+                20.,
+                20.,
+                80.,
+                80.,
+                Brush::Solid(ColorLinPremul::from_srgba_u8(color)),
+                z,
+            );
+            c.pop_spatial_layer();
+        }
+        c.pop_spatial_layer();
+        let (_, _, pixels) = surface.end_frame_headless(c).unwrap();
+        for (x, color) in [(40, [0, 0, 255, 255]), (80, [255, 0, 0, 255])] {
+            assert_eq!(&pixels[(60 * 120 + x) * 4..][..4], &color);
+        }
+    }
+}
+
+#[test]
 fn animated_detail_reuses_static_spatial_tiles_without_changing_pixels() {
     let (mut retained, mut fresh) = surfaces();
     for surface in [&mut retained, &mut fresh] {

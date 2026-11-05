@@ -15,6 +15,25 @@ fn contains_spatial(commands: &[Command]) -> bool {
         _ => false,
     })
 }
+fn preserves_plane(matrix: [f32; 16]) -> bool {
+    // A local z=0 point must stay at z=0. Test authored coefficients exactly:
+    // even a small genuine translateZ/rotation still needs spatial depth.
+    matrix[2] == 0. && matrix[6] == 0. && matrix[14] == 0.
+}
+fn coplanar_contents(commands: &[Command]) -> bool {
+    commands.iter().all(|command| match command {
+        Command::DrawSpatialLayer(child) => {
+            preserves_plane(child.matrix)
+                // Backface visibility needs the accumulated spatial matrix.
+                && !child.backface_hidden
+                && (!child.preserve_3d
+                    || (preserves_plane(child.perspective) && coplanar_contents(&child.commands)))
+        }
+        Command::DrawScrollScene { scene, .. } => coplanar_contents(&scene.commands),
+        Command::DrawProjectedTexture { quad, .. } => quad.iter().all(|p| p[2] == 0.),
+        _ => true,
+    })
+}
 fn expand_retained(commands: &[Command]) -> Vec<Command> {
     commands
         .iter()
@@ -150,7 +169,13 @@ impl JagSurface {
         if layer.backface_hidden && spatial::back_facing(matrix) {
             return Ok(());
         }
-        if !layer.preserve_3d {
+        // Coplanar contents have CSS paint order, not competing GPU depths.
+        // Compose them before applying the shared projective transform. Separate
+        // tilted quads round the same depth differently and flicker through one
+        // another, particularly for a filtered aura with different bounds.
+        if !layer.preserve_3d
+            || (preserves_plane(layer.perspective) && coplanar_contents(&layer.commands))
+        {
             let commands: Vec<_> = layer
                 .commands
                 .iter()
