@@ -129,6 +129,63 @@ impl JagSurface {
     /// Returns `(width, height, pixels)` where `pixels` is tightly-packed
     /// RGBA with 4 bytes per pixel (`width * height * 4` total).
     pub fn end_frame_headless(&mut self, canvas: Canvas) -> Result<(u32, u32, Vec<u8>)> {
+        let width = canvas.viewport.width.max(1);
+        let height = canvas.viewport.height.max(1);
+        let texture = crate::gpu_texture::create_texture_2d(
+            &self.device,
+            "headless-render-target",
+            crate::gpu_texture::Texture2dSpec {
+                width,
+                height,
+                format: self.surface_format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            },
+        );
+        let mut encoder = self.render_headless(canvas, &texture)?;
+
+        // Copy rendered texture to a CPU-readable buffer
+        let bytes_per_pixel = 4u32;
+        let bytes_per_row = width
+            .checked_mul(bytes_per_pixel)
+            .ok_or_else(|| anyhow::anyhow!("headless readback row size overflow"))?;
+        let readback =
+            ReadbackBuffer::new(&self.device, "headless-readback", bytes_per_row, height)?;
+
+        crate::gpu_texture::copy_texture_to_buffer_2d(
+            &mut encoder,
+            &texture,
+            readback.buffer(),
+            readback.padded_bytes_per_row(),
+            [width, height],
+        );
+
+        // Submit and wait
+        crate::gpu_commands::submit_command_encoder(&self.queue, encoder);
+
+        let mapped = readback.map_tightly_packed(&self.device)?;
+        let mut pixels = Vec::with_capacity(mapped.len());
+        crate::readback::append_rgba_row(&mut pixels, &mapped, self.surface_format);
+
+        Ok((width, height, pixels))
+    }
+
+    /// Finish a frame by rendering into `target`, which the caller made: the
+    /// canvas's size, this surface's format, and `RENDER_ATTACHMENT` usage.
+    /// Nothing is read back. The work is submitted but not waited for, so a
+    /// caller that hands the texture to another process must wait on the queue
+    /// first.
+    pub fn end_frame_into_texture(&mut self, canvas: Canvas, target: &wgpu::Texture) -> Result<()> {
+        let encoder = self.render_headless(canvas, target)?;
+        crate::gpu_commands::submit_command_encoder(&self.queue, encoder);
+        Ok(())
+    }
+
+    /// Record the frame's render pass into `target` and return the encoder.
+    fn render_headless(
+        &mut self,
+        canvas: Canvas,
+        target: &wgpu::Texture,
+    ) -> Result<wgpu::CommandEncoder> {
         // Keep passes in sync with DPI/logical settings
         self.pass.set_scale_factor(self.dpi_scale);
         self.pass.set_logical_pixels(self.logical_pixels);
@@ -331,18 +388,16 @@ impl JagSurface {
             }
         }
 
-        // Create offscreen render target
-        let texture = crate::gpu_texture::create_texture_2d(
-            &self.device,
-            "headless-render-target",
-            crate::gpu_texture::Texture2dSpec {
-                width,
-                height,
-                format: self.surface_format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            },
+        let size = target.size();
+        anyhow::ensure!(
+            (size.width, size.height) == (width, height) && target.format() == self.surface_format,
+            "render target is {}x{} {:?}, the frame is {width}x{height} {:?}",
+            size.width,
+            size.height,
+            target.format(),
+            self.surface_format
         );
-        let texture_view = crate::gpu_texture::create_default_texture_view(&texture);
+        let texture_view = crate::gpu_texture::create_default_texture_view(target);
 
         // Command encoder
         let mut encoder = crate::gpu_commands::create_command_encoder(
@@ -376,29 +431,6 @@ impl JagSurface {
             false, // don't preserve surface
         );
 
-        // Copy rendered texture to a CPU-readable buffer
-        let bytes_per_pixel = 4u32;
-        let bytes_per_row = width
-            .checked_mul(bytes_per_pixel)
-            .ok_or_else(|| anyhow::anyhow!("headless readback row size overflow"))?;
-        let readback =
-            ReadbackBuffer::new(&self.device, "headless-readback", bytes_per_row, height)?;
-
-        crate::gpu_texture::copy_texture_to_buffer_2d(
-            &mut encoder,
-            &texture,
-            readback.buffer(),
-            readback.padded_bytes_per_row(),
-            [width, height],
-        );
-
-        // Submit and wait
-        crate::gpu_commands::submit_command_encoder(&self.queue, encoder);
-
-        let mapped = readback.map_tightly_packed(&self.device)?;
-        let mut pixels = Vec::with_capacity(mapped.len());
-        crate::readback::append_rgba_row(&mut pixels, &mapped, self.surface_format);
-
-        Ok((width, height, pixels))
+        Ok(encoder)
     }
 }
