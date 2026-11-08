@@ -48,12 +48,15 @@ impl JagTextProvider {
         run: &crate::scene::TextRun,
         antialiasing: TextAntialiasing,
     ) -> f32 {
-        if !matches!(antialiasing, TextAntialiasing::Grayscale) {
+        if !matches!(self.antialiasing, TextAntialiasing::Grayscale)
+            || !matches!(antialiasing, TextAntialiasing::Grayscale)
+        {
             return 0.0;
         }
 
-        // CoreText/Chromium grayscale text retains slightly more outline ink
-        // than Swash at mobile sizes. Apply the measured 0.1 CSS-pixel stem
+        // The mobile grayscale calibration is a platform policy. Desktop
+        // Retina also selects grayscale masks but must retain normal stems.
+        // Apply the measured mobile 0.1 CSS-pixel stem
         // darkening in physical pixels, without changing advances, CSS weight,
         // or authored color. Clamp malformed scale ratios defensively.
         const STEM_DARKENING_CSS_PX: f32 = 0.1;
@@ -68,12 +71,15 @@ impl JagTextProvider {
     /// Load a `FontFace` from a `fontdb` face entry.
     fn load_face_from_db(face: &fontdb::FaceInfo) -> Option<jag_text::FontFace> {
         use fontdb::Source;
-        let bytes: Vec<u8> = match &face.source {
-            Source::File(path) => std::fs::read(path).ok()?,
-            Source::Binary(data) => data.as_ref().as_ref().to_vec(),
-            Source::SharedFile(_, data) => data.as_ref().as_ref().to_vec(),
-        };
-        jag_text::FontFace::from_vec(bytes, face.index as usize).ok()
+        match &face.source {
+            Source::File(path) => jag_text::FontFace::from_path(path, face.index as usize).ok(),
+            Source::SharedFile(path, _) if path.starts_with("/System/Library/Fonts") => {
+                jag_text::FontFace::from_path(path, face.index as usize).ok()
+            }
+            Source::Binary(data) | Source::SharedFile(_, data) => {
+                jag_text::FontFace::from_vec(data.as_ref().as_ref().to_vec(), face.index as usize).ok()
+            }
+        }
     }
 
     /// Register a web font from raw TTF/OTF bytes.
@@ -151,4 +157,51 @@ impl JagTextProvider {
 
         Ok(true)
     }
+}
+
+#[cfg(test)]
+mod raster_policy_tests {
+    use super::*;
+    #[test]
+    fn ios_stem_darkening_tracks_device_scale_without_affecting_desktop() {
+        let bytes = include_bytes!("../../../../fonts/Geist/Geist-VariableFont_wght.ttf");
+        let mut provider = JagTextProvider::from_bytes(bytes, SubpixelOrientation::RGB)
+            .expect("load bundled Geist variable font");
+        provider.antialiasing = TextAntialiasing::Subpixel;
+        let mut run = crate::scene::TextRun {
+            features: Vec::new(),
+            source: None,
+            spacing: None,
+            rtl: None,
+            text: "Medium".to_string(),
+            pos: [0.0, 0.0],
+            size: 28.0,
+            logical_size: 14.0,
+            color: crate::scene::ColorLinPremul::rgba(10, 10, 10, 255),
+            weight: 500.0,
+            style: crate::scene::FontStyle::Normal,
+            family: None,
+        };
+
+        assert_eq!(
+            provider.browser_stem_embolden_px(&run, TextAntialiasing::Subpixel),
+            0.0
+        );
+        assert_eq!(
+            provider.browser_stem_embolden_px(&run, TextAntialiasing::Subpixel.for_run(&run)),
+            0.0,
+            "desktop Retina grayscale must not inherit the mobile stem calibration"
+        );
+        provider.antialiasing = TextAntialiasing::Grayscale;
+        assert!(
+            (provider.browser_stem_embolden_px(&run, TextAntialiasing::Grayscale) - 0.2).abs()
+                < f32::EPSILON
+        );
+        run.size = 42.0;
+        assert!(
+            (provider.browser_stem_embolden_px(&run, TextAntialiasing::Grayscale) - 0.3).abs()
+                < f32::EPSILON
+        );
+    }
+
 }

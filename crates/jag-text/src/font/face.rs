@@ -15,7 +15,7 @@ use crate::font::{FontError, FontMetrics, Result, ScaledFontMetrics};
 #[derive(Debug, Clone)]
 pub struct FontFace {
     /// Full font data.
-    data: Arc<[u8]>,
+    data: Arc<super::shared_data::SharedData>,
     /// Font index within a TTC/OTC collection (0 for non-collections).
     index: usize,
     /// Offset to the table directory for this font.
@@ -29,7 +29,11 @@ pub struct FontFace {
 impl FontFace {
     /// Create a font face from raw bytes and a font index within the file.
     pub fn from_bytes(data: Arc<[u8]>, index: usize) -> Result<Self> {
-        let font = FontRef::from_index(&data, index).ok_or(FontError::InvalidFont)?;
+        Self::from_shared_bytes(super::shared_data::share(data), index)
+    }
+
+    fn from_shared_bytes(data: Arc<super::shared_data::SharedData>, index: usize) -> Result<Self> {
+        let font = FontRef::from_index(&data.bytes, index).ok_or(FontError::InvalidFont)?;
         let metrics = Self::metrics_from_swash(&font);
         let (offset, key) = (font.offset, font.key);
         Ok(Self {
@@ -43,11 +47,15 @@ impl FontFace {
 
     /// Create a font face from raw bytes owned by a `Vec<u8>`.
     pub fn from_vec(data: Vec<u8>, index: usize) -> Result<Self> {
-        Self::from_bytes(Arc::from(data), index)
+        Self::from_shared_bytes(super::shared_data::share(data), index)
     }
 
     /// Create a font face from a font file on disk.
     pub fn from_path(path: impl AsRef<std::path::Path>, index: usize) -> Result<Self> {
+        #[cfg(target_os = "macos")]
+        if let Some(data) = super::system_data::open(path.as_ref()) {
+            return Self::from_shared_bytes(data?, index);
+        }
         let data = std::fs::read(path)?;
         Self::from_vec(data, index)
     }
@@ -55,7 +63,12 @@ impl FontFace {
     /// Expose the raw font bytes for integration with other libraries
     /// that take ownership of the font data (e.g. harfbuzz_rs).
     pub fn as_bytes(&self) -> Arc<[u8]> {
-        self.data.clone()
+        self.data.bytes.export()
+    }
+
+    /// Borrow font data without materializing an owned copy of system files.
+    pub fn borrowed_bytes(&self) -> &[u8] {
+        &self.data.bytes
     }
 
     /// Return the face index used when loading this font.
@@ -66,7 +79,7 @@ impl FontFace {
     /// Return a transient `FontRef` for interacting with swash APIs.
     fn as_swash_ref(&self) -> FontRef<'_> {
         FontRef {
-            data: &self.data,
+            data: &self.data.bytes,
             offset: self.offset,
             key: self.key,
         }

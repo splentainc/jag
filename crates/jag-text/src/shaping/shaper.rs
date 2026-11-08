@@ -125,8 +125,8 @@ impl TextShaper {
         features: &[harfrust::Feature],
     ) -> ShapedRun {
         // Build a harfrust FontRef from the font bytes.
-        let font_data = font.as_bytes();
-        let font_ref = HbFontRef::from_index(&font_data, font.index() as u32)
+        let font_data = font.borrowed_bytes();
+        let font_ref = HbFontRef::from_index(font_data, font.index() as u32)
             .expect("valid font data for harfrust");
 
         // Shaper configuration — apply font variations for variable fonts.

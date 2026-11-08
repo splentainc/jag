@@ -62,6 +62,7 @@ fn strengthen_grayscale_subpixel_rgba8(data: &[u8]) -> Vec<u8> {
 /// text on every frame.
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 struct GlyphRunKey {
+    features: Vec<crate::scene::TextFeature>,
     spacing: Option<[u32; 2]>,
     rtl: Option<bool>,
     text_hash: u64,

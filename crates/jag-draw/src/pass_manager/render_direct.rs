@@ -167,8 +167,13 @@ impl PassManager {
             }
         }
 
-        let mut text_groups =
-            self.prep_text_direct(glyph_draws, transparent_text_z, inv_logical, queue);
+        let mut text_groups = self.prep_text_direct(
+            glyph_draws,
+            transparent_text_z,
+            inv_logical,
+            [width, height],
+            queue,
+        );
 
         // Sort text groups by z-index (back to front)
         text_groups.sort_by_key(|(z, _, _, _, _, _, _)| *z);

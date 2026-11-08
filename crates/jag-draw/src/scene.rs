@@ -287,8 +287,16 @@ pub struct TextSourceSlice {
     pub clip_end: Option<f32>,
 }
 
+/// An OpenType feature applied across a complete shaping run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TextFeature {
+    pub tag: [u8; 4],
+    pub value: u32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextRun {
+    pub features: Vec<TextFeature>,
     /// CSS tracking and word spacing in em units, applied while shaping.
     pub spacing: Option<TextSpacing>,
     /// Resolved horizontal direction; None asks the shaper to infer it.

@@ -64,6 +64,7 @@ impl Canvas {
         // Rasterize at *physical* pixel size so small styled text matches the
         // same provider path used by display-list text.
         let run = TextRun {
+            features: Vec::new(),
             source: None,
             spacing: None,
             rtl: None,
@@ -181,6 +182,7 @@ impl Canvas {
                 1.0
             };
             let run = TextRun {
+                features: Vec::new(),
                 source: None,
                 spacing: None,
                 rtl: None,

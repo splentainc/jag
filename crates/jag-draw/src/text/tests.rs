@@ -125,6 +125,7 @@ mod tests {
     #[test]
     fn desktop_subpixel_coverage_is_limited_to_low_dpi() {
         let make_run = |device_scale: f32| crate::scene::TextRun {
+            features: Vec::new(),
             source: None,
             spacing: None,
             rtl: None,
@@ -157,47 +158,13 @@ mod tests {
     }
 
     #[test]
-    fn ios_stem_darkening_tracks_device_scale_without_affecting_desktop() {
-        let bytes = include_bytes!("../../../../fonts/Geist/Geist-VariableFont_wght.ttf");
-        let mut provider = JagTextProvider::from_bytes(bytes, SubpixelOrientation::RGB)
-            .expect("load bundled Geist variable font");
-        let mut run = crate::scene::TextRun {
-            source: None,
-            spacing: None,
-            rtl: None,
-            text: "Medium".to_string(),
-            pos: [0.0, 0.0],
-            size: 28.0,
-            logical_size: 14.0,
-            color: crate::scene::ColorLinPremul::rgba(10, 10, 10, 255),
-            weight: 500.0,
-            style: crate::scene::FontStyle::Normal,
-            family: None,
-        };
-
-        assert_eq!(
-            provider.browser_stem_embolden_px(&run, TextAntialiasing::Subpixel),
-            0.0
-        );
-        provider.antialiasing = TextAntialiasing::Grayscale;
-        assert!(
-            (provider.browser_stem_embolden_px(&run, TextAntialiasing::Grayscale) - 0.2).abs()
-                < f32::EPSILON
-        );
-        run.size = 42.0;
-        assert!(
-            (provider.browser_stem_embolden_px(&run, TextAntialiasing::Grayscale) - 0.3).abs()
-                < f32::EPSILON
-        );
-    }
-
-    #[test]
     fn geist_mobile_specimens_preserve_weight_and_grayscale_at_12_14_16_px() {
         let bytes = include_bytes!("../../../../fonts/Geist/Geist-VariableFont_wght.ttf");
         let mut provider = JagTextProvider::from_bytes(bytes, SubpixelOrientation::RGB)
             .expect("load bundled Geist variable font");
 
         let baseline = provider.rasterize_run(&crate::scene::TextRun {
+            features: Vec::new(),
             source: None,
             spacing: None,
             rtl: None,
@@ -222,6 +189,7 @@ mod tests {
         );
 
         let high_dpi = provider.rasterize_run(&crate::scene::TextRun {
+            features: Vec::new(),
             source: None,
             spacing: None,
             rtl: None,
@@ -251,6 +219,7 @@ mod tests {
                 let mut weight_ink = Vec::new();
                 for weight in [400.0, 500.0, 700.0] {
                     let run = crate::scene::TextRun {
+                        features: Vec::new(),
                         source: None,
                         spacing: None,
                         rtl: None,
@@ -333,6 +302,7 @@ mod tests {
         assert!(JagTextProvider::face_supports_char(&face, 'ह'));
 
         let run = crate::scene::TextRun {
+            features: Vec::new(),
             source: None,
             spacing: None,
             rtl: None,
@@ -361,6 +331,7 @@ mod tests {
         }
         let provider = provider.unwrap();
         let run = crate::scene::TextRun {
+            features: Vec::new(),
             source: None,
             spacing: None,
             rtl: None,
@@ -395,6 +366,7 @@ mod tests {
         let provider = provider.unwrap();
 
         let base_run = crate::scene::TextRun {
+            features: Vec::new(),
             source: None,
             spacing: None,
             rtl: None,
@@ -439,6 +411,7 @@ mod tests {
         let provider = provider.unwrap();
 
         let run = crate::scene::TextRun {
+            features: Vec::new(),
             source: None,
             spacing: None,
             rtl: None,

@@ -2,7 +2,13 @@ use super::inverse_mask::outer_shadow_mask_pixels;
 use jag_draw::{Rect, RoundedRadii, RoundedRect};
 
 /// The original per-sample rasterizer, kept as the reference the fast path must match.
-fn reference(mapped: Rect, width: u32, height: u32, inverse: [f32; 6], owner: RoundedRect) -> Vec<u8> {
+fn reference(
+    mapped: Rect,
+    width: u32,
+    height: u32,
+    inverse: [f32; 6],
+    owner: RoundedRect,
+) -> Vec<u8> {
     let mut pixels = vec![0u8; width as usize * height as usize * 4];
     for y in 0..height {
         for x in 0..width {
@@ -16,7 +22,10 @@ fn reference(mapped: Rect, width: u32, height: u32, inverse: [f32; 6], owner: Ro
                                 / height as f32,
                     ];
                     let [a, b, c, d, e, f] = inverse;
-                    let p = [a * world[0] + c * world[1] + e, b * world[0] + d * world[1] + f];
+                    let p = [
+                        a * world[0] + c * world[1] + e,
+                        b * world[0] + d * world[1] + f,
+                    ];
                     if !contains(owner, p) {
                         outside += 1;
                     }
@@ -52,13 +61,32 @@ fn contains(shape: RoundedRect, p: [f32; 2]) -> bool {
 }
 
 fn owner(rect: Rect, tl: f32, tr: f32, br: f32, bl: f32) -> RoundedRect {
-    RoundedRect { rect, radii: RoundedRadii { tl, tr, br, bl } }
+    RoundedRect {
+        rect,
+        radii: RoundedRadii { tl, tr, br, bl },
+    }
 }
 
 #[test]
 fn fast_mask_matches_reference_for_axis_aligned_and_rotated_transforms() {
-    let bounds = Rect { x: 10.0, y: 20.0, w: 97.0, h: 61.0 };
-    let shape = owner(Rect { x: 22.0, y: 31.3, w: 70.5, h: 38.2 }, 14.0, 3.0, 0.0, 40.0);
+    let bounds = Rect {
+        x: 10.0,
+        y: 20.0,
+        w: 97.0,
+        h: 61.0,
+    };
+    let shape = owner(
+        Rect {
+            x: 22.0,
+            y: 31.3,
+            w: 70.5,
+            h: 38.2,
+        },
+        14.0,
+        3.0,
+        0.0,
+        40.0,
+    );
     let cases: [[f32; 6]; 4] = [
         [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
         [1.0, 0.0, 0.0, -1.0, 0.0, 120.0],

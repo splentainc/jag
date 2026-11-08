@@ -1,5 +1,7 @@
-use std::collections::HashMap;
 use std::sync::Arc;
+#[path = "allocator_pool.rs"]
+mod pool;
+use pool::ResourcePool;
 
 use crate::gpu_texture::{Texture2dSpec, create_default_texture_view, create_texture_2d};
 use crate::gpu_transfer::allocate_buffer_resource;
@@ -34,8 +36,8 @@ pub struct BufKey {
 /// Simple render allocator with basic pooling for textures and buffers.
 pub struct RenderAllocator {
     device: Arc<wgpu::Device>,
-    texture_pool: HashMap<TexKey, Vec<wgpu::Texture>>,
-    buffer_pool: HashMap<BufKey, Vec<wgpu::Buffer>>,
+    texture_pool: ResourcePool<TexKey, wgpu::Texture>,
+    buffer_pool: ResourcePool<BufKey, wgpu::Buffer>,
 }
 
 fn pooled_buffer_size(size: u64) -> u64 {
@@ -52,22 +54,21 @@ impl RenderAllocator {
     pub fn new(device: Arc<wgpu::Device>) -> Self {
         Self {
             device,
-            texture_pool: HashMap::new(),
-            buffer_pool: HashMap::new(),
+            texture_pool: ResourcePool::new(128 * 1024 * 1024, 128),
+            buffer_pool: ResourcePool::new(16 * 1024 * 1024, 128),
         }
     }
 
     pub fn begin_frame(&mut self) {
-        // placeholder for any per-frame bookkeeping
+        // Idle storage spans frames; allocation and release update accounting.
     }
 
     pub fn end_frame(&mut self) {
-        // placeholder for returning transients automatically in the future
+        // Callers explicitly release resources after their last encoded use.
     }
 
     pub fn allocate_texture(&mut self, key: TexKey) -> OwnedTexture {
-        let entry = self.texture_pool.entry(key).or_default();
-        let texture = entry.pop().unwrap_or_else(|| {
+        let texture = self.texture_pool.take(&key).unwrap_or_else(|| {
             create_texture_2d(
                 &self.device,
                 "alloc:tex",
@@ -84,10 +85,13 @@ impl RenderAllocator {
     }
 
     pub fn release_texture(&mut self, tex: OwnedTexture) {
-        self.texture_pool
-            .entry(tex.key)
-            .or_default()
-            .push(tex.texture);
+        let (block_w, block_h) = tex.key.format.block_dimensions();
+        let block_bytes = tex.key.format.block_copy_size(None).unwrap_or(16) as u64;
+        let bytes = u64::from(tex.key.width.div_ceil(block_w))
+            .saturating_mul(u64::from(tex.key.height.div_ceil(block_h)))
+            .saturating_mul(block_bytes);
+        self.texture_pool.put(tex.key, tex.texture, bytes);
+        self.profile_idle_storage();
     }
 
     pub fn allocate_buffer(&mut self, key: BufKey) -> OwnedBuffer {
@@ -95,17 +99,24 @@ impl RenderAllocator {
             size: pooled_buffer_size(key.size),
             usage: key.usage,
         };
-        let entry = self.buffer_pool.entry(key).or_default();
-        let buffer = entry.pop().unwrap_or_else(|| {
+        let buffer = self.buffer_pool.take(&key).unwrap_or_else(|| {
             allocate_buffer_resource(&self.device, "alloc:buf", key.size, key.usage)
         });
         OwnedBuffer { buffer, key }
     }
 
     pub fn release_buffer(&mut self, buf: OwnedBuffer) {
-        self.buffer_pool
-            .entry(buf.key)
-            .or_default()
-            .push(buf.buffer);
+        self.buffer_pool.put(buf.key, buf.buffer, buf.key.size);
+        self.profile_idle_storage();
+    }
+
+    fn profile_idle_storage(&self) {
+        if std::env::var_os("JAG_PROFILE_ALLOCATOR").is_some() {
+            eprintln!(
+                "[gpu-idle-pool] textures={} buffers={}",
+                self.texture_pool.bytes(),
+                self.buffer_pool.bytes()
+            );
+        }
     }
 }

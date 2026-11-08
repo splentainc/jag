@@ -311,6 +311,7 @@ mod box_shadow;
 mod composite_resources;
 mod draw_shapes;
 mod filter;
+mod offscreen_shadows;
 mod paint_root;
 mod paint_root_gradients;
 mod quad_prep;
@@ -321,6 +322,7 @@ mod rounded;
 mod scrim_cutout;
 mod setup;
 mod targets;
+mod text_atlas;
 mod text_prep;
 
 mod external_bindings;

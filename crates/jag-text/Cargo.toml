@@ -25,3 +25,7 @@ fontdb = { workspace = true }
 # Clipboard support (not available on Android)
 [target.'cfg(not(target_os = "android"))'.dependencies]
 arboard = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+memmap2 = "0.9"
+libc = "0.2"

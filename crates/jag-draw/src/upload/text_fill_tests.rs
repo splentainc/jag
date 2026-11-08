@@ -31,6 +31,7 @@ fn solid_glyph(w: u32, h: u32) -> RasterizedGlyph {
 fn draw(transform: Transform2D, fill: Option<Brush>) -> ExtractedTextDraw {
     ExtractedTextDraw {
         run: TextRun {
+            features: Vec::new(),
             source: None,
             spacing: None,
             rtl: None,

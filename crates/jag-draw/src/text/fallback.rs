@@ -1,6 +1,6 @@
 impl JagTextProvider {
     fn face_key(face: &jag_text::FontFace) -> (usize, usize) {
-        let bytes = face.as_bytes();
+        let bytes = face.borrowed_bytes();
         (bytes.as_ptr() as usize, face.index())
     }
 
@@ -8,8 +8,8 @@ impl JagTextProvider {
         if ch.is_control() {
             return true;
         }
-        let bytes = face.as_bytes();
-        swash::FontRef::from_index(&bytes, face.index())
+        let bytes = face.borrowed_bytes();
+        swash::FontRef::from_index(bytes, face.index())
             .map(|font| font.charmap().map(ch) != 0)
             .unwrap_or(false)
     }

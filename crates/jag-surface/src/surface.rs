@@ -11,6 +11,7 @@ use crate::canvas::ImageFitMode;
 
 mod cached;
 mod core;
+mod deferred_pass;
 mod frame;
 mod masks;
 mod opacity;
@@ -202,11 +203,11 @@ pub struct JagSurface {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     surface_format: wgpu::TextureFormat,
-    pass: PassManager,
+    pass: deferred_pass::DeferredPass,
     extended_color_composition: bool,
     web_srgb_composition: bool,
     native_extended_color_composition: bool,
-    extended_group_pass: Option<PassManager>,
+    extended_group_pass: Option<deferred_pass::DeferredPass>,
     allocator: RenderAllocator,
     /// When true, render directly to the surface; otherwise render offscreen then composite.
     direct: bool,

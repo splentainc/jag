@@ -10,7 +10,7 @@ fn shape_styled_segment(
         letter: 0.0,
         word: 0.0,
     });
-    let features = if spacing.letter != 0.0 {
+    let mut features = if spacing.letter != 0.0 {
         vec![
             harfrust::Feature::new(hb_tag_from_bytes(b"liga"), 0, ..),
             harfrust::Feature::new(hb_tag_from_bytes(b"clig"), 0, ..),
@@ -18,6 +18,8 @@ fn shape_styled_segment(
     } else {
         Vec::new()
     };
+    features.extend(run.features.iter().map(|f|
+        harfrust::Feature::new(hb_tag_from_bytes(&f.tag), f.value, ..)));
     let mut shaped = TextShaper::shape_with_features(
         text,
         0..text.len(),

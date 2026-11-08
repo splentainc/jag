@@ -32,6 +32,7 @@ mod fallback_coverage_tests {
     fn myanmar_language_label_has_real_glyphs_and_ink() {
         let provider = provider_with_unlisted_script_font();
         let run = crate::scene::TextRun {
+            features: Vec::new(),
             source: None,
             spacing: None,
             rtl: None,

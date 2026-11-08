@@ -89,6 +89,7 @@ impl Canvas {
     ) {
         self.draw_text_context(
             TextRun {
+                features: Vec::new(),
                 source: None,
                 spacing: None,
                 rtl: None,
@@ -223,6 +224,7 @@ impl Canvas {
     ) {
         self.painter.text_with_fill(
             TextRun {
+                features: Vec::new(),
                 source: None,
                 spacing: None,
                 rtl: None,

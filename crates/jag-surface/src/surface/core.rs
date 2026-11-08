@@ -48,7 +48,7 @@ impl JagSurface {
         queue: Arc<wgpu::Queue>,
         surface_format: wgpu::TextureFormat,
     ) -> Self {
-        let pass = PassManager::new(device.clone(), surface_format);
+        let pass = super::deferred_pass::DeferredPass::new(device.clone(), surface_format);
         let allocator = RenderAllocator::new(device.clone());
 
         Self {
@@ -99,6 +99,28 @@ impl JagSurface {
     }
     pub fn pass_manager(&mut self) -> &mut PassManager {
         &mut self.pass
+    }
+    /// Recording-only hosts can forward bindings without constructing GPU passes.
+    pub fn snapshot_external_textures(&self) -> jag_draw::ExternalTextureBindings {
+        self.pass
+            .get()
+            .map(PassManager::snapshot_external_textures)
+            .unwrap_or_default()
+    }
+    pub fn clear_external_textures(&mut self) {
+        if let Some(pass) = self.pass.get_mut() {
+            pass.clear_external_textures();
+        }
+    }
+    pub fn remove_external_texture(&mut self, id: jag_draw::ExternalTextureId) {
+        if let Some(pass) = self.pass.get_mut() {
+            pass.remove_external_texture(id);
+        }
+    }
+    pub fn prune_expired_external_textures(&mut self) -> usize {
+        self.pass
+            .get_mut()
+            .map_or(0, PassManager::prune_expired_external_textures)
     }
     pub fn has_pending_image_loads(&self) -> bool {
         self.pending_image_loads

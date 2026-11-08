@@ -32,9 +32,6 @@ impl TextProvider for JagTextProvider {
             renderer.embolden(stem_embolden);
         }
 
-        // Get emoji font bytes if available (we'll create FontRef per-use due to lifetime constraints)
-        let emoji_bytes = self.emoji_font.as_ref().map(|f| f.as_bytes());
-
         let mut out = Vec::new();
         let mut pen_x: f32 = 0.0;
 
@@ -55,8 +52,8 @@ impl TextProvider for JagTextProvider {
                 shape_styled_segment(run, text, &segment.face, &hb_vars)
             };
 
-            let font_bytes = segment.face.as_bytes();
-            let font_ref = FontRef::from_index(&font_bytes, segment.face.index())
+            let font_bytes = segment.face.borrowed_bytes();
+            let font_ref = FontRef::from_index(font_bytes, segment.face.index())
                 .expect("jag-text FontFace bytes should be a valid swash FontRef");
             let norm_coords: Vec<swash::NormalizedCoord> = if raw_variations.is_empty() {
                 Vec::new()
@@ -95,6 +92,7 @@ impl TextProvider for JagTextProvider {
 
                 if glyph_id == 0 {
                     let cluster_byte = shaped.clusters[idx] as usize;
+                    let emoji_bytes = self.fallback_emoji_font().map(|f| f.borrowed_bytes());
                     let emoji_rendered = emoji_bytes.as_ref().and_then(|eb| {
                         let ch = text[cluster_byte..].chars().next()?;
                         let emoji_font_ref = FontRef::from_index(eb, 0)?;

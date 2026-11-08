@@ -1,6 +1,9 @@
 pub mod face;
 pub mod loader;
 pub mod metrics;
+mod shared_data;
+#[cfg(target_os = "macos")]
+mod system_data;
 
 pub use face::FontFace;
 pub use loader::{FontCache, FontKey, load_system_default_font};

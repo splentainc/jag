@@ -1,7 +1,8 @@
 //! Float composition with explicit native-linear or browser-sRGB blending.
+use super::deferred_pass::DeferredPass;
 use super::{JagSurface, opacity::LayerGeometry};
 use anyhow::Result;
-use jag_draw::{Command, ExternalTextureId, PassManager, SurfaceEffect, TextProvider, wgpu};
+use jag_draw::{Command, ExternalTextureId, SurfaceEffect, TextProvider, wgpu};
 use std::sync::Arc;
 
 impl JagSurface {
@@ -38,19 +39,21 @@ impl JagSurface {
         self.extended_color_composition =
             self.web_srgb_composition || self.native_extended_color_composition;
         let mut pass = if self.extended_color_composition {
-            PassManager::new_with_color_space(
+            DeferredPass::with_color_space(
                 self.device.clone(),
                 self.surface_format,
                 wgpu::TextureFormat::Rgba16Float,
                 self.web_srgb_composition,
             )
         } else {
-            PassManager::new(self.device.clone(), self.surface_format)
+            DeferredPass::new(self.device.clone(), self.surface_format)
         };
-        self.pass.copy_external_textures_to(&mut pass);
-        pass.set_scroll_offset(self.pass.scroll_offset());
-        std::mem::swap(&mut self.pass.image_cache, &mut pass.image_cache);
-        std::mem::swap(&mut self.pass.svg_cache, &mut pass.svg_cache);
+        if let Some(old) = self.pass.get_mut() {
+            old.copy_external_textures_to(&mut pass);
+            pass.set_scroll_offset(old.scroll_offset());
+            std::mem::swap(&mut old.image_cache, &mut pass.image_cache);
+            std::mem::swap(&mut old.svg_cache, &mut pass.svg_cache);
+        }
         self.pass = pass;
         self.frame_cache = None;
         self.retained_layers.clear();
@@ -79,7 +82,7 @@ impl JagSurface {
         // Effect groups use the root's precision and blend space. A cached
         // float-target pass keeps its shader formats and transfer consistent.
         let mut group_pass = self.extended_group_pass.take().unwrap_or_else(|| {
-            PassManager::new_with_color_space(
+            DeferredPass::with_color_space(
                 self.device.clone(),
                 wgpu::TextureFormat::Rgba16Float,
                 wgpu::TextureFormat::Rgba16Float,

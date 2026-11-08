@@ -6,7 +6,7 @@ impl JagTextProvider {
             bold_font: None,
             italic_font: None,
             mono_font: None,
-            emoji_font: None,
+            emoji_font: None.into(),
             orientation,
             antialiasing: TextAntialiasing::platform_default(),
             font_db: None,
@@ -29,7 +29,7 @@ impl JagTextProvider {
             bold_font: None,
             italic_font: None,
             mono_font: None,
-            emoji_font: Some(emoji_font),
+            emoji_font: Some(emoji_font).into(),
             orientation,
             antialiasing: TextAntialiasing::platform_default(),
             font_db: None,
@@ -40,9 +40,9 @@ impl JagTextProvider {
     }
 
     /// Construct from a reasonable system sans-serif font using `fontdb`.
-    /// Also attempts to load a system emoji font for color emoji fallback.
+    /// Loads the system emoji fallback only when missing-glyph rendering needs it.
     pub fn from_system_fonts(orientation: SubpixelOrientation) -> anyhow::Result<Self> {
-        use fontdb::{Database, Family, Query, Source, Stretch, Style, Weight};
+        use fontdb::{Database, Family, Query, Stretch, Style, Weight};
 
         let mut db = Database::new();
         db.load_system_fonts();
@@ -106,13 +106,8 @@ impl JagTextProvider {
             .face(id)
             .ok_or_else(|| anyhow::anyhow!("fontdb face missing for system font id"))?;
 
-        let bytes: Vec<u8> = match &face.source {
-            Source::File(path) => std::fs::read(path)?,
-            Source::Binary(data) => data.as_ref().as_ref().to_vec(),
-            Source::SharedFile(_, data) => data.as_ref().as_ref().to_vec(),
-        };
-
-        let font = jag_text::FontFace::from_vec(bytes, face.index as usize)?;
+        let font = Self::load_face_from_db(face)
+            .ok_or_else(|| anyhow::anyhow!("failed to load system font"))?;
 
         // Try to load a matching bold face from the same family (if available).
         let primary_family = face.families.first().map(|(name, _lang)| name.clone());
@@ -128,14 +123,7 @@ impl JagTextProvider {
                 })
             })
             .and_then(|bold_id| db.face(bold_id))
-            .and_then(|bold_face| {
-                let bytes: Vec<u8> = match &bold_face.source {
-                    Source::File(path) => std::fs::read(path).ok()?,
-                    Source::Binary(data) => Some(data.as_ref().as_ref().to_vec())?,
-                    Source::SharedFile(_, data) => Some(data.as_ref().as_ref().to_vec())?,
-                };
-                jag_text::FontFace::from_vec(bytes, bold_face.index as usize).ok()
-            });
+            .and_then(Self::load_face_from_db);
 
         // Try to load a matching italic face from the same family (if available).
         let italic_font = primary_family
@@ -150,14 +138,7 @@ impl JagTextProvider {
                 })
             })
             .and_then(|italic_id| db.face(italic_id))
-            .and_then(|italic_face| {
-                let bytes: Vec<u8> = match &italic_face.source {
-                    Source::File(path) => std::fs::read(path).ok()?,
-                    Source::Binary(data) => Some(data.as_ref().as_ref().to_vec())?,
-                    Source::SharedFile(_, data) => Some(data.as_ref().as_ref().to_vec())?,
-                };
-                jag_text::FontFace::from_vec(bytes, italic_face.index as usize).ok()
-            });
+            .and_then(Self::load_face_from_db);
 
         // Try to load a monospace font for code spans
         let mono_font = db
@@ -182,47 +163,14 @@ impl JagTextProvider {
                 ..Query::default()
             })
             .and_then(|mono_id| db.face(mono_id))
-            .and_then(|mono_face| {
-                let bytes: Vec<u8> = match &mono_face.source {
-                    Source::File(path) => std::fs::read(path).ok()?,
-                    Source::Binary(data) => Some(data.as_ref().as_ref().to_vec())?,
-                    Source::SharedFile(_, data) => Some(data.as_ref().as_ref().to_vec())?,
-                };
-                jag_text::FontFace::from_vec(bytes, mono_face.index as usize).ok()
-            });
-
-        // Try to load emoji font for fallback
-        let emoji_font = db
-            .query(&Query {
-                families: &[
-                    // macOS
-                    Family::Name("Apple Color Emoji".into()),
-                    // Windows
-                    Family::Name("Segoe UI Emoji".into()),
-                    // Linux
-                    Family::Name("Noto Color Emoji".into()),
-                ],
-                weight: Weight::NORMAL,
-                stretch: Stretch::Normal,
-                style: Style::Normal,
-                ..Query::default()
-            })
-            .and_then(|emoji_id| {
-                let emoji_face = db.face(emoji_id)?;
-                let emoji_bytes: Vec<u8> = match &emoji_face.source {
-                    Source::File(path) => std::fs::read(path).ok()?,
-                    Source::Binary(data) => Some(data.as_ref().as_ref().to_vec())?,
-                    Source::SharedFile(_, data) => Some(data.as_ref().as_ref().to_vec())?,
-                };
-                jag_text::FontFace::from_vec(emoji_bytes, emoji_face.index as usize).ok()
-            });
+            .and_then(Self::load_face_from_db);
 
         Ok(Self {
             font,
             bold_font,
             italic_font,
             mono_font,
-            emoji_font,
+            emoji_font: std::sync::OnceLock::new(),
             orientation,
             antialiasing: TextAntialiasing::platform_default(),
             font_db: Some(db),

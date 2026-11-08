@@ -8,6 +8,8 @@
 use super::{PassManager, TextQuadVtx, glyph_mask_for_atlas};
 use crate::gpu_texture::upload_texture_2d;
 use crate::gpu_transfer::create_transient_upload;
+#[path = "text_visibility.rs"]
+mod visibility;
 
 type TextResource = (
     i32,
@@ -34,6 +36,7 @@ impl PassManager {
         glyph_draws: &[GlyphDraw],
         transparent_text_z: &std::collections::HashSet<i32>,
         inv_logical: f32,
+        target: [u32; 2],
         queue: &wgpu::Queue,
     ) -> Vec<TextResource> {
         // Group text by (z-index, clip rect) for proper depth rendering
@@ -54,6 +57,16 @@ impl PassManager {
         }
         let mut text_groups_by_zclip: Vec<TextGroup<'_>> = Vec::new();
         for (idx, (origin, glyph, color, z, clip)) in glyph_draws.iter().enumerate() {
+            if !visibility::visible(
+                *origin,
+                [glyph.mask.width(), glyph.mask.height()],
+                color.a,
+                self.scroll_offset,
+                inv_logical,
+                target,
+            ) {
+                continue;
+            }
             // Try to merge with an existing group at the same (z, clip).
             let found = text_groups_by_zclip
                 .iter_mut()
@@ -71,7 +84,14 @@ impl PassManager {
         // eprintln!("🎨 Grouped text into {} z-index groups", text_by_z.len());
 
         // Prepare text rendering data before render pass
-        let text_groups = if !glyph_draws.is_empty() {
+        let text_groups = if !text_groups_by_zclip.is_empty() {
+            self.prepare_text_atlas(text_groups_by_zclip.iter().flat_map(|group| {
+                group
+                    .glyphs
+                    .iter()
+                    .map(|(_, _, glyph, _)| [glyph.mask.width(), glyph.mask.height()])
+            }));
+            let atlas_height = self.text_mask_atlas.height();
             let mut atlas_cursor_x = 0u32;
             let mut atlas_cursor_y = 0u32;
             let mut next_row_height = 0u32;
@@ -117,9 +137,9 @@ impl PassManager {
                     );
 
                     let u0 = atlas_cursor_x as f32 / 4096.0;
-                    let v0 = atlas_cursor_y as f32 / 4096.0;
+                    let v0 = atlas_cursor_y as f32 / atlas_height as f32;
                     let u1 = (atlas_cursor_x + w) as f32 / 4096.0;
-                    let v1 = (atlas_cursor_y + h) as f32 / 4096.0;
+                    let v1 = (atlas_cursor_y + h) as f32 / atlas_height as f32;
 
                     // Glyph masks are rasterized at *physical* pixel size. To avoid
                     // scaling them again during composition, convert their size into
@@ -233,6 +253,7 @@ impl PassManager {
         glyph_draws: &[GlyphDraw],
         transparent_text_z: &std::collections::HashSet<i32>,
         inv_logical: f32,
+        target: [u32; 2],
         queue: &wgpu::Queue,
     ) -> Vec<TextResource> {
         // Group text by (z-index, clip) for proper depth rendering (offscreen path)
@@ -248,6 +269,16 @@ impl PassManager {
         }
         let mut text_groups_by_zclip_off: Vec<TextGroupOff<'_>> = Vec::new();
         for (idx, (origin, glyph, color, z, clip)) in glyph_draws.iter().enumerate() {
+            if !visibility::visible(
+                *origin,
+                [glyph.mask.width(), glyph.mask.height()],
+                color.a,
+                self.scroll_offset,
+                inv_logical,
+                target,
+            ) {
+                continue;
+            }
             let found = text_groups_by_zclip_off
                 .iter_mut()
                 .find(|g| g.z == *z && g.clip == *clip);
@@ -263,7 +294,14 @@ impl PassManager {
         }
 
         // Prepare text rendering data (same as direct path)
-        let text_groups_off = if !glyph_draws.is_empty() {
+        let text_groups_off = if !text_groups_by_zclip_off.is_empty() {
+            self.prepare_text_atlas(text_groups_by_zclip_off.iter().flat_map(|group| {
+                group
+                    .glyphs
+                    .iter()
+                    .map(|(_, _, glyph, _)| [glyph.mask.width(), glyph.mask.height()])
+            }));
+            let atlas_height = self.text_mask_atlas.height();
             let mut atlas_cursor_x = 0u32;
             let mut atlas_cursor_y = 0u32;
             let mut next_row_height = 0u32;
@@ -300,7 +338,7 @@ impl PassManager {
                     let rows = h as usize;
                     let required_len = (dst_y + rows)
                         .saturating_mul(atlas_row_stride)
-                        .min(atlas_row_stride * atlas_width);
+                        .min(atlas_row_stride * atlas_height as usize);
                     if self.text_atlas_upload.len() < required_len {
                         self.text_atlas_upload.resize(required_len, 0);
                     }
@@ -319,9 +357,9 @@ impl PassManager {
                     }
 
                     let u0 = atlas_cursor_x as f32 / 4096.0;
-                    let v0 = atlas_cursor_y as f32 / 4096.0;
+                    let v0 = atlas_cursor_y as f32 / atlas_height as f32;
                     let u1 = (atlas_cursor_x + w) as f32 / 4096.0;
-                    let v1 = (atlas_cursor_y + h) as f32 / 4096.0;
+                    let v1 = (atlas_cursor_y + h) as f32 / atlas_height as f32;
 
                     // Convert glyph bitmap size from physical pixels into logical
                     // scene units so that the viewport scale maps them back to
@@ -362,7 +400,7 @@ impl PassManager {
             }
 
             if atlas_max_y > 0 {
-                let upload_height = atlas_max_y.min(4096);
+                let upload_height = atlas_max_y.min(atlas_height);
                 let upload_len = (upload_height as usize) * atlas_row_stride;
                 if self.text_atlas_upload.len() >= upload_len {
                     upload_texture_2d(

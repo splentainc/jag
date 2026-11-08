@@ -86,6 +86,7 @@ impl UnifiedBuilder {
             link_color.a *= opa;
         }
         let text_run = TextRun {
+            features: Vec::new(),
             source: None,
             spacing: None,
             rtl: None,

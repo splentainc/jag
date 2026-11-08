@@ -137,6 +137,7 @@ pub fn rasterize_run_cached(
     // Use the concrete provider data pointer as a stable identifier for this run.
     let provider_id = (provider as *const dyn TextProvider as *const ()) as usize;
     let key = GlyphRunKey {
+        features: run.features.clone(),
         spacing: run.spacing.map(|s| [s.letter.to_bits(), s.word.to_bits()]),
         rtl: run.rtl,
         text_hash,
@@ -419,7 +420,7 @@ pub struct JagTextProvider {
     /// Optional monospace font for code spans.
     mono_font: Option<jag_text::FontFace>,
     /// Optional emoji font for fallback when primary font lacks emoji glyphs.
-    emoji_font: Option<jag_text::FontFace>,
+    emoji_font: std::sync::OnceLock<Option<jag_text::FontFace>>,
     orientation: SubpixelOrientation,
     antialiasing: TextAntialiasing,
     /// System font database kept alive for on-demand font resolution.

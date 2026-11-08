@@ -21,6 +21,7 @@
 //!     .expect("Failed to load fonts");
 //!
 //! let run = TextRun {
+//!     features: Vec::new(),
 //!     source: None,
 //!     spacing: None,
 //!     rtl: None,
@@ -201,6 +202,7 @@ pub(crate) fn set_gamma_blend_coverage(gamma_blend: bool) {
 include!("text/support.rs");
 include!("text/providers.rs");
 include!("text/constructors.rs");
+include!("text/lazy_emoji.rs");
 include!("text/raster_masks.rs");
 include!("text/family_resolution.rs");
 include!("text/family_resolution_tests.rs");
@@ -214,3 +216,7 @@ include!("text/tests.rs");
 include!("text/source_slices.rs");
 
 include!("text/styled_shaping.rs");
+
+#[cfg(test)]
+#[path = "text/feature_tests.rs"]
+mod feature_tests;

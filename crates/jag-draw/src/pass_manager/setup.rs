@@ -202,7 +202,7 @@ impl PassManager {
             "text-mask-atlas",
             crate::gpu_texture::Texture2dSpec {
                 width: 4096,
-                height: 4096,
+                height: 1,
                 // Use RGBA8 so we can store RGB subpixel coverage masks directly.
                 format: wgpu::TextureFormat::Rgba8Unorm,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING
