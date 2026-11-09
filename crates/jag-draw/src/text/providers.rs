@@ -102,12 +102,6 @@ pub fn rasterize_run_cached(
     provider: &dyn TextProvider,
     run: &crate::scene::TextRun,
 ) -> std::sync::Arc<Vec<RasterizedGlyph>> {
-    if let Some(source) = &run.source {
-        let mut context = run.clone();
-        context.source = None;
-        let glyphs = rasterize_run_cached(provider, &context);
-        return std::sync::Arc::new(slice_glyphs(&glyphs, source, run.size));
-    }
     use crate::scene::FontStyle as SceneFontStyle;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::Hasher;
@@ -137,6 +131,10 @@ pub fn rasterize_run_cached(
     // Use the concrete provider data pointer as a stable identifier for this run.
     let provider_id = (provider as *const dyn TextProvider as *const ()) as usize;
     let key = GlyphRunKey {
+        source: run.source.as_ref().map(|source| (
+            source.bytes.start, source.bytes.end,
+            source.clip_start.map(f32::to_bits), source.clip_end.map(f32::to_bits),
+        )),
         features: run.features.clone(),
         spacing: run.spacing.map(|s| [s.letter.to_bits(), s.word.to_bits()]),
         rtl: run.rtl,
@@ -154,7 +152,17 @@ pub fn rasterize_run_cached(
         return hit;
     }
 
-    let glyphs = provider.rasterize_run(run);
+    // Source fragments share the paragraph's shaping context. Retain the
+    // selected masks too: re-slicing on every paint cloned all mask bytes even
+    // when the paragraph glyphs were already cached.
+    let glyphs = if let Some(source) = &run.source {
+        let mut context = run.clone();
+        context.source = None;
+        let glyphs = rasterize_run_cached(provider, &context);
+        slice_glyphs(&glyphs, source, run.size)
+    } else {
+        provider.rasterize_run(run)
+    };
     cache.insert(key, glyphs)
 }
 

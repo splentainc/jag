@@ -237,30 +237,15 @@ impl TextProvider for JagTextProvider {
         weight: u16,
         style: crate::scene::FontStyle,
     ) -> Option<LineMetrics> {
-        // Try to find the specific font face from the cache (web fonts, system fonts).
-        if let Some(family_str) = family {
-            let is_italic = matches!(
-                style,
-                crate::scene::FontStyle::Italic | crate::scene::FontStyle::Oblique
-            );
-            let candidates = parse_font_family_stack(family_str);
-            let cache = self.font_cache.lock().unwrap();
-            for candidate in &candidates {
-                let key = Self::cache_key_for(candidate);
-                if let Some(set) = cache.get(&key) {
-                    if let Some(face) = Self::pick_variant(set, weight, is_italic) {
-                        let m = face.scaled_metrics(px.max(1.0));
-                        return Some(LineMetrics {
-                            ascent: m.ascent,
-                            descent: m.descent,
-                            line_gap: m.line_gap,
-                        });
-                    }
-                }
-            }
-        }
-        // Fall back to the default font
-        self.line_metrics(px)
+        // Metrics must resolve a cold family exactly as shaping does; returning
+        // the default face here makes layout depend on prior text measurement.
+        let face = self.select_face_for_style(family, weight, style);
+        let metrics = Self::browser_face_metrics(&face, px.max(1.0));
+        Some(LineMetrics {
+            ascent: metrics.ascent,
+            descent: metrics.descent,
+            line_gap: metrics.line_gap,
+        })
     }
 
     fn measure_run(&self, run: &crate::scene::TextRun) -> f32 {

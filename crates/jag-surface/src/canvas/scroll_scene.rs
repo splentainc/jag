@@ -6,6 +6,7 @@ pub struct ScrollSceneCapture {
     start: usize,
     base: jag_draw::Transform2D,
     side_channels: [usize; 9],
+    next_mask_id: u64,
 }
 
 impl Canvas {
@@ -28,6 +29,7 @@ impl Canvas {
             start: self.command_count(),
             base: self.current_transform(),
             side_channels: self.capture_side_channels(),
+            next_mask_id: self.next_generated_mask_texture_id,
         }
     }
 
@@ -116,5 +118,73 @@ impl Canvas {
                 base: self.current_transform(),
                 inputs: std::sync::Arc::new(inputs.clone()),
             }]);
+    }
+}
+
+/// Immutable scroll commands together with the mask resources they reference.
+/// Unlike command-only captures, this can replay CSS masks and outer shadows
+/// onto a new canvas without dropping their texture bindings.
+pub struct RetainedScrollScene {
+    scene: std::sync::Arc<jag_draw::ScrollScene>,
+    generated: Vec<super::GeneratedMaskTexture>,
+    urls: Vec<super::UrlMaskTexture>,
+    mask_ids: std::ops::Range<u64>,
+}
+
+impl Canvas {
+    pub fn finish_retained_scroll_scene(
+        &mut self,
+        capture: ScrollSceneCapture,
+    ) -> Option<RetainedScrollScene> {
+        let after = self.capture_side_channels();
+        if after
+            .iter()
+            .zip(capture.side_channels)
+            .enumerate()
+            .any(|(i, (a, b))| !matches!(i, 5 | 6) && *a != b)
+            || self.display_list().commands[capture.start..]
+                .iter()
+                .any(|c| matches!(c, jag_draw::Command::BackdropFilter(_)))
+        {
+            return None;
+        }
+        let generated = self.generated_mask_textures[capture.side_channels[5]..].to_vec();
+        let urls = self.url_mask_textures[capture.side_channels[6]..].to_vec();
+        let mask_ids = capture.next_mask_id..self.next_generated_mask_texture_id;
+        Some(RetainedScrollScene {
+            scene: self.wrap_scroll_scene(capture),
+            generated,
+            urls,
+            mask_ids,
+        })
+    }
+
+    pub fn can_replay_retained_scroll_scene(&self, retained: &RetainedScrollScene) -> bool {
+        self.can_replay_scroll_scene(&retained.scene)
+            // Keep resource IDs stable for compiled/tile caches. If earlier
+            // producers allocated into this range, replay must not overwrite
+            // their bindings; let the producer make a fresh capture instead.
+            && (retained.mask_ids.is_empty()
+                || self.next_generated_mask_texture_id <= retained.mask_ids.start)
+    }
+
+    /// Returns false without modifying the canvas if its resources or scale
+    /// conflict with the capture. The caller then paints a fresh version.
+    pub fn replay_retained_scroll_scene(
+        &mut self,
+        retained: &RetainedScrollScene,
+        inputs: &jag_draw::ScrollInputs,
+    ) -> bool {
+        if !self.can_replay_retained_scroll_scene(retained) {
+            return false;
+        }
+        self.generated_mask_textures
+            .extend(retained.generated.iter().cloned());
+        self.url_mask_textures.extend(retained.urls.iter().cloned());
+        if !retained.mask_ids.is_empty() {
+            self.next_generated_mask_texture_id = retained.mask_ids.end;
+        }
+        self.replay_scroll_scene(&retained.scene, inputs);
+        true
     }
 }

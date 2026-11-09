@@ -16,7 +16,7 @@ mod masks;
 mod scroll_scene;
 mod shapes;
 mod spatial;
-pub use scroll_scene::ScrollSceneCapture;
+pub use scroll_scene::{RetainedScrollScene, ScrollSceneCapture};
 mod text;
 mod text_extra;
 

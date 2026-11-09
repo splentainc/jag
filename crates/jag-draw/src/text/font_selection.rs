@@ -112,14 +112,25 @@ impl JagTextProvider {
     ///
     /// Returns a *cloned* `FontFace` (cheap — inner data is `Arc`).
     fn select_face(&self, run: &crate::scene::TextRun) -> jag_text::FontFace {
-        use crate::scene::FontStyle as SceneFontStyle;
+        self.select_face_for_style(
+            run.family.as_deref(),
+            run.weight.clamp(100.0, 900.0).round() as u16,
+            run.style,
+        )
+    }
 
-        let requested_weight = run.weight.clamp(100.0, 900.0).round() as u16;
+    fn select_face_for_style(
+        &self,
+        family: Option<&str>,
+        requested_weight: u16,
+        style: crate::scene::FontStyle,
+    ) -> jag_text::FontFace {
+        use crate::scene::FontStyle as SceneFontStyle;
         let is_bold = requested_weight >= 600;
-        let is_italic = matches!(run.style, SceneFontStyle::Italic | SceneFontStyle::Oblique);
+        let is_italic = matches!(style, SceneFontStyle::Italic | SceneFontStyle::Oblique);
 
         // --- Try to resolve from the font-family string, if present. ---
-        if let Some(ref family_str) = run.family {
+        if let Some(family_str) = family {
             let candidates = parse_font_family_stack(family_str);
 
             for candidate in &candidates {
@@ -165,5 +176,28 @@ impl JagTextProvider {
             }
         }
         self.font.clone()
+    }
+    fn browser_face_metrics(face: &jag_text::FontFace, px: f32) -> jag_text::ScaledFontMetrics {
+        let metrics = face.scaled_metrics(px);
+        #[cfg(target_os = "macos")]
+        {
+            let mut metrics = metrics;
+            // Match Blink/Safari's macOS legacy-font ascent correction. Inspect
+            // the selected face, not the CSS alias (or an unavailable family).
+            let font = swash::FontRef::from_index(face.borrowed_bytes(), face.index());
+            let family = font
+                .and_then(|font| {
+                    font.localized_strings()
+                        .find_by_id(swash::StringId::Family, Some("en"))
+                })
+                .map(|s| s.to_string());
+            if matches!(family.as_deref(), Some("Helvetica" | "Times" | "Courier")) {
+                metrics.ascent +=
+                    ((metrics.ascent.round() + metrics.descent.round()) * 0.15).round();
+            }
+            metrics
+        }
+        #[cfg(not(target_os = "macos"))]
+        metrics
     }
 }

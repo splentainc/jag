@@ -240,4 +240,79 @@ mod tests {
         assert!(!canvas.finish_scroll_scene_commit(capture));
         assert!(!canvas.supports_independent_scroll());
     }
+    #[test]
+    fn retained_scene_keeps_mask_bindings_and_rejects_resource_id_collisions() {
+        use jag_draw::{MaskMode, Rect, RoundedRect};
+        let mut source = test_canvas();
+        let capture = source.begin_scroll_scene_capture();
+        source.push_scroll_layer("root", [0., 0.]);
+        let rect = Rect {
+            x: 0.,
+            y: 0.,
+            w: 20.,
+            h: 20.,
+        };
+        assert!(source.push_outer_shadow_mask(
+            rect,
+            RoundedRect {
+                rect: Rect {
+                    x: 5.,
+                    y: 5.,
+                    w: 10.,
+                    h: 10.
+                },
+                radii: Default::default(),
+            }
+        ));
+        source.pop_filter();
+        source
+            .resolve_url_mask(
+                "mask.svg",
+                rect,
+                rect,
+                [20., 20.],
+                [false; 2],
+                MaskMode::Alpha,
+            )
+            .unwrap();
+        source.pop_scroll_layer();
+        let retained = source.finish_retained_scroll_scene(capture).unwrap();
+        let mut target = test_canvas();
+        assert!(target.replay_retained_scroll_scene(&retained, &Default::default()));
+        assert_eq!(
+            target.generated_mask_textures[0].id,
+            source.generated_mask_textures[0].id
+        );
+        assert!(std::sync::Arc::ptr_eq(
+            &target.generated_mask_textures[0].pixels,
+            &source.generated_mask_textures[0].pixels
+        ));
+        assert_eq!(
+            target.url_mask_textures[0].id,
+            source.url_mask_textures[0].id
+        );
+        let next = target
+            .resolve_url_mask(
+                "next.svg",
+                rect,
+                rect,
+                [20., 20.],
+                [false; 2],
+                MaskMode::Alpha,
+            )
+            .unwrap();
+        assert_ne!(next.texture_id, source.url_mask_textures[0].id);
+        let count = target.command_count();
+        assert!(!target.replay_retained_scroll_scene(&retained, &Default::default()));
+        assert_eq!(
+            target.command_count(),
+            count,
+            "collision must not partially replay"
+        );
+        assert_eq!(target.generated_mask_textures.len(), 1);
+        assert_eq!(target.url_mask_textures.len(), 2);
+        let mut scaled = test_canvas();
+        scaled.dpi_scale = 2.;
+        assert!(!scaled.replay_retained_scroll_scene(&retained, &Default::default()));
+    }
 }

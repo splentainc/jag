@@ -19,8 +19,10 @@ impl JagTextProvider {
                     Family::Name("Times"),
                 ],
                 GenericFamily::SansSerif => vec![
-                    // CSS sans-serif follows the browser's generic font;
-                    // platform UI faces belong to system-ui below.
+                    // macOS Chrome resolves the CSS generic to Helvetica;
+                    // platform UI faces remain separate in system-ui below.
+                    #[cfg(target_os = "macos")]
+                    Family::Name("Helvetica"),
                     Family::SansSerif,
                     Family::Name("Arial"),
                     Family::Name("Helvetica Neue"),

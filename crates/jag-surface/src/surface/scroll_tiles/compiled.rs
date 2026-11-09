@@ -19,12 +19,12 @@ enum Op {
         owner: usize,
         segment: usize,
         clip: usize,
-        data: RasterRun,
+        data: Arc<RasterRun>,
     },
     ClipPush(usize),
     ClipPop,
     Draw {
-        command: Command,
+        command: Box<Command>,
         owner: usize,
     },
 }
@@ -34,10 +34,28 @@ pub(super) struct CompiledScene {
     properties: Vec<Property>,
     clips: Vec<ClipProperty>,
     ops: Vec<Op>,
+    runs: Vec<Arc<RasterRun>>,
+    scale: f32,
+    font_tag: u64,
 }
 
 impl CompiledScene {
-    fn new(source: Arc<jag_draw::ScrollScene>, scale: f32) -> Result<Self> {
+    fn new(
+        source: Arc<jag_draw::ScrollScene>,
+        scale: f32,
+        previous: Option<&Self>,
+    ) -> Result<Self> {
+        let font_tag = source.provider.as_ref().map_or(0, |p| p.cache_tag());
+        let previous = previous.filter(|old| {
+            old.scale == scale
+                && old.font_tag == font_tag
+                && old.source.dpi_scale == source.dpi_scale
+                && match (&old.source.provider, &source.provider) {
+                    (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                    (None, None) => true,
+                    _ => false,
+                }
+        });
         let mut result = Self {
             source: source.clone(),
             properties: vec![Property {
@@ -48,6 +66,9 @@ impl CompiledScene {
             }],
             clips: Vec::new(),
             ops: Vec::new(),
+            runs: Vec::new(),
+            scale,
+            font_tag,
         };
         let mut owners = vec![0];
         let mut clips = vec![0]; // 0 is the live viewport/embedding clip
@@ -81,7 +102,7 @@ impl CompiledScene {
                     .zip(run.last().and_then(Command::z_index))
                     .is_some_and(|(z, last)| z < last);
             if boundary {
-                result.flush(&mut run, owner, clip, &mut segments, scale);
+                result.flush(&mut run, owner, clip, &mut segments, previous);
             }
             match command {
                 Command::PushScrollLayer {
@@ -141,7 +162,7 @@ impl CompiledScene {
                 | Command::BackdropFilter(_)
                 | Command::BoxShadow { .. }
                 | Command::DrawExternalTexture { .. } => result.ops.push(Op::Draw {
-                    command: command.clone(),
+                    command: Box::new(command.clone()),
                     owner,
                 }),
                 Command::DrawScrollScene { .. } => {
@@ -155,13 +176,13 @@ impl CompiledScene {
             *owners.last().unwrap(),
             *clips.last().unwrap(),
             &mut segments,
-            scale,
+            previous,
         );
         ensure!(
             owners.len() == 1 && clips.len() == 1 && transforms.len() == 1,
             "unclosed committed paint scope"
         );
-        result.split_interleaved_runs(scale);
+        result.split_interleaved_runs(previous);
         Ok(result)
     }
 
@@ -170,7 +191,7 @@ impl CompiledScene {
     /// document would otherwise cover later-painted content baked into the
     /// document's first tiles. Split each run where it crosses the composite
     /// z of any other op, until no run straddles one.
-    fn split_interleaved_runs(&mut self, scale: f32) {
+    fn split_interleaved_runs(&mut self, previous: Option<&Self>) {
         loop {
             let thresholds: std::collections::BTreeSet<i32> = self
                 .ops
@@ -206,16 +227,12 @@ impl CompiledScene {
                 }
                 changed = true;
                 for band in bands {
+                    let data = self.raster_run(band, previous);
                     ops.push(Op::Run {
                         owner,
                         segment,
                         clip,
-                        data: RasterRun::new(
-                            band,
-                            scale,
-                            self.source.dpi_scale,
-                            self.source.provider.as_ref(),
-                        ),
+                        data,
                     });
                 }
             }
@@ -234,13 +251,33 @@ impl CompiledScene {
         }
     }
 
+    // Effect bindings can require a new scene each frame while its text and
+    // geometry remain unchanged. Reuse exact content-space runs from the last
+    // compilation, including ink bounds and tile bins. A changed run alone
+    // recompiles; a structural change safely misses subsequent ordinal slots.
+    fn raster_run(&mut self, commands: Vec<Command>, previous: Option<&Self>) -> Arc<RasterRun> {
+        let cached = previous
+            .and_then(|old| old.runs.get(self.runs.len()))
+            .filter(|run| run.commands == commands);
+        let data = cached.cloned().unwrap_or_else(|| {
+            Arc::new(RasterRun::new(
+                commands,
+                self.scale,
+                self.source.dpi_scale,
+                self.source.provider.as_ref(),
+            ))
+        });
+        self.runs.push(data.clone());
+        data
+    }
+
     fn flush(
         &mut self,
         run: &mut Vec<Command>,
         owner: usize,
         clip: usize,
         segments: &mut [usize],
-        scale: f32,
+        previous: Option<&Self>,
     ) {
         if run.is_empty() {
             return;
@@ -249,16 +286,12 @@ impl CompiledScene {
         for command in &mut commands {
             normalize(command, self.properties[owner].origin);
         }
+        let data = self.raster_run(commands, previous);
         self.ops.push(Op::Run {
             owner,
             segment: segments[owner],
             clip,
-            data: RasterRun::new(
-                commands,
-                scale,
-                self.source.dpi_scale,
-                self.source.provider.as_ref(),
-            ),
+            data,
         });
         segments[owner] += 1;
     }
@@ -282,7 +315,12 @@ impl JagSurface {
         let compiled = if let Some(value) = self.scroll_tiles.compiled.get(&stamp) {
             value.clone()
         } else {
-            let value = Arc::new(CompiledScene::new(source.clone(), scale)?);
+            let value = Arc::new(CompiledScene::new(
+                source.clone(),
+                scale,
+                self.scroll_tiles.last_compiled.as_deref(),
+            )?);
+            self.scroll_tiles.last_compiled = Some(value.clone());
             if self.scroll_tiles.compiled.len() >= 4 {
                 self.scroll_tiles.compiled.clear();
             }
@@ -357,7 +395,7 @@ impl JagSurface {
                     out.push(Command::PopTransform);
                 }
                 Op::Draw { command, owner } => {
-                    let mut command = command.clone();
+                    let mut command = (**command).clone();
                     jag_draw::translate_command(&mut command, deltas[*owner]);
                     out.push(command);
                 }
@@ -406,3 +444,7 @@ pub(super) fn split_at_thresholds(
 #[cfg(test)]
 #[path = "compiled_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "reuse_tests.rs"]
+mod reuse_tests;

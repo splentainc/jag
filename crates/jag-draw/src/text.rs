@@ -220,3 +220,7 @@ include!("text/styled_shaping.rs");
 #[cfg(test)]
 #[path = "text/feature_tests.rs"]
 mod feature_tests;
+
+#[cfg(test)]
+#[path = "text/source_cache_tests.rs"]
+mod source_cache_tests;

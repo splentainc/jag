@@ -18,6 +18,7 @@ use raster::RasterRun;
 
 #[derive(Default)]
 pub(super) struct ScrollTiles {
+    last_compiled: Option<Arc<compiled::CompiledScene>>,
     compiled: HashMap<(u64, u64, u32), Arc<compiled::CompiledScene>>,
     ids: HashMap<(String, usize, i32, i32), (ExternalTextureId, u64)>,
     frame: u64,
