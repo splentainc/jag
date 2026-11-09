@@ -63,20 +63,48 @@ impl JagSurface {
     pub(super) fn render_effect_group_layer(
         &mut self,
         geometry: LayerGeometry,
-        commands: Vec<Command>,
+        mut commands: Vec<Command>,
         effect: SurfaceEffect,
         text_provider: Option<&Arc<dyn TextProvider + Send + Sync>>,
         logical_scale: f32,
         stable_id: Option<ExternalTextureId>,
     ) -> Result<ExternalTextureId> {
+        // Resolve retained pixels before preparing or swapping the float pass.
+        // Scrolling can reuse hundreds of tiles; copying all external bindings
+        // into and out of a render pass for each cache hit is unnecessary.
+        super::opacity::localize_clips(&mut commands, geometry.origin, logical_scale);
+        let tex_id = stable_id.unwrap_or_else(|| self.allocate_synthetic_external_texture_id());
+        let images_ready = commands.iter().all(|command| match command {
+            Command::DrawImage { path, .. } => {
+                self.pass.is_image_ready(&crate::resolve_asset_path(path))
+            }
+            _ => true,
+        });
+        let retained_key = images_ready
+            .then(|| {
+                self.retained_layers.key(
+                    &commands,
+                    &effect,
+                    geometry.origin,
+                    geometry.pixel_size,
+                    logical_scale,
+                    text_provider,
+                )
+            })
+            .flatten();
+        if let Some(key) = &retained_key
+            && let Some(view) = self.retained_layers.lookup(tex_id, key)
+        {
+            self.pass.register_shared_external_texture(tex_id, view);
+            return Ok(tex_id);
+        }
         if !self.extended_color_composition {
             return self.render_effect_group_layer_inner(
                 geometry,
                 commands,
                 effect,
                 text_provider,
-                logical_scale,
-                stable_id,
+                (tex_id, retained_key),
             );
         }
         // Effect groups use the root's precision and blend space. A cached
@@ -104,8 +132,7 @@ impl JagSurface {
             commands,
             effect,
             text_provider,
-            logical_scale,
-            stable_id,
+            (tex_id, retained_key),
         );
         // Restore both success and failure paths. Newly created group views
         // belong to the parent frame; the cached group pass retains no views.

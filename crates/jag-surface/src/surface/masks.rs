@@ -76,17 +76,27 @@ impl JagSurface {
         for mask in masks {
             let path = crate::resolve_asset_path(&mask.path);
             let svg = svg_asset(&path);
-            let view = if svg {
+            let loaded = if svg {
                 self.pass
                     .rasterize_svg_to_view(&path, self.dpi_scale, None, &self.queue)
                     .map(|(view, _, _)| view)
-                    .unwrap_or_else(|| self.transparent_mask_view())
             } else if let Some((view, _, _)) = self.pass.try_get_image_view(&path) {
-                view
+                Some(view)
             } else {
                 self.pending_image_loads |= self.pass.request_image_load(&path);
-                self.transparent_mask_view()
+                None
             };
+            if let Some(view) = &loaded {
+                // Asset caches replace immutable textures on source/scale changes.
+                // Views are recreated on lookup, so identify the backing texture.
+                // Pending transparent placeholders deliberately have no revision.
+                use std::hash::{Hash, Hasher};
+                let mut revision = std::collections::hash_map::DefaultHasher::new();
+                view.texture().hash(&mut revision);
+                self.retained_layers
+                    .external_revision(mask.id, revision.finish());
+            }
+            let view = loaded.unwrap_or_else(|| self.transparent_mask_view());
             register_external_texture(&mut self.pass, mask.id, view);
         }
     }

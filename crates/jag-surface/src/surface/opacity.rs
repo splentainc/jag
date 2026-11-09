@@ -53,7 +53,7 @@ fn layer_geometry(bounds: Rect, viewport: Viewport, scale: f32) -> Option<LayerG
 /// consumed as a scissor rect against the layer's device-pixel render target.
 /// Translating alone would leave the rect a `scale` factor too small, so each
 /// clip is both moved to the layer origin and converted to device pixels.
-fn localize_clips(commands: &mut [Command], origin: [f32; 2], scale: f32) {
+pub(super) fn localize_clips(commands: &mut [Command], origin: [f32; 2], scale: f32) {
     let mut transforms = vec![Transform2D::identity()];
     for command in commands {
         if let Command::DrawExternalTexture {
@@ -139,7 +139,7 @@ impl JagSurface {
         self.pass.begin_composite_frame();
     }
 
-    fn allocate_synthetic_external_texture_id(&mut self) -> ExternalTextureId {
+    pub(super) fn allocate_synthetic_external_texture_id(&mut self) -> ExternalTextureId {
         let id = ExternalTextureId(self.next_synthetic_external_texture_id);
         self.next_synthetic_external_texture_id =
             self.next_synthetic_external_texture_id.wrapping_add(1);
@@ -153,43 +153,17 @@ impl JagSurface {
     pub(super) fn render_effect_group_layer_inner(
         &mut self,
         geometry: LayerGeometry,
-        mut commands: Vec<Command>,
+        commands: Vec<Command>,
         effect: jag_draw::SurfaceEffect,
         text_provider: Option<&Arc<dyn jag_draw::TextProvider + Send + Sync>>,
-        logical_scale: f32,
-        stable_id: Option<ExternalTextureId>,
+        prepared: (ExternalTextureId, Option<super::retained_layers::LayerKey>),
     ) -> Result<ExternalTextureId> {
         let needs_text_clip = matches!(
             &effect,
             jag_draw::SurfaceEffect::MaskGroup(group)
                 if group.layers.iter().any(|layer| layer.text_clip)
         );
-        localize_clips(&mut commands, geometry.origin, logical_scale);
-        let tex_id = stable_id.unwrap_or_else(|| self.allocate_synthetic_external_texture_id());
-        let images_ready = commands.iter().all(|command| match command {
-            Command::DrawImage { path, .. } => {
-                self.pass.is_image_ready(&crate::resolve_asset_path(path))
-            }
-            _ => true,
-        });
-        let retained_key = images_ready
-            .then(|| {
-                self.retained_layers.key(
-                    &commands,
-                    &effect,
-                    geometry.origin,
-                    geometry.pixel_size,
-                    logical_scale,
-                    text_provider,
-                )
-            })
-            .flatten();
-        if let Some(key) = &retained_key
-            && let Some(view) = self.retained_layers.lookup(tex_id, key)
-        {
-            self.pass.register_shared_external_texture(tex_id, view);
-            return Ok(tex_id);
-        }
+        let (tex_id, retained_key) = prepared;
         self.retained_layers
             .rasterized(retained_key.is_some(), geometry.pixel_size);
         let backdrop_draws = commands
