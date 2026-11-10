@@ -61,3 +61,49 @@ fn equal_z_commands_stay_in_one_band() {
         1
     );
 }
+
+#[test]
+fn reopened_scroll_owners_allocate_distinct_raster_segment_texture_keys() {
+    let open = || Command::PushScrollLayer {
+        key: "footer".into(),
+        origin: [0., 0.],
+        binding: jag_draw::ScrollBinding {
+            key: "scroll".into(),
+            value: [0., 0.],
+            factor: [-1., -1.],
+            basis: [1., 0., 0., 1.],
+        },
+    };
+    let source = Arc::new(jag_draw::ScrollScene::new(
+        vec![
+            open(),
+            rect(1),
+            Command::PopScrollLayer,
+            open(),
+            rect(2),
+            Command::PopScrollLayer,
+        ]
+        .into(),
+        Transform2D::identity(),
+        1.,
+        None,
+    ));
+    let scene = CompiledScene::new(source, 1., None).unwrap();
+    let keys: Vec<_> = scene
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Run { owner, segment, .. } => {
+                Some((scene.properties[*owner].key.clone(), *segment))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(keys.len(), 2);
+    let unique: std::collections::HashSet<_> = keys.iter().collect();
+    assert_eq!(
+        unique.len(),
+        keys.len(),
+        "different raster runs must not overwrite one texture: {keys:?}"
+    );
+}

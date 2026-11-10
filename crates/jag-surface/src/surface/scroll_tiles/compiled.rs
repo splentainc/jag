@@ -241,12 +241,17 @@ impl CompiledScene {
                 break;
             }
         }
-        // Tile identities are keyed by (owner, segment): keep them unique.
-        let mut next = vec![0usize; self.properties.len()];
+        // Reopened properties can share an owner key. Texture identities use
+        // that key, not the property index, so number segments across all its
+        // occurrences to prevent later runs overwriting earlier run pixels.
+        let mut next = HashMap::<&str, usize>::new();
         for op in &mut self.ops {
             if let Op::Run { owner, segment, .. } = op {
-                *segment = next[*owner];
-                next[*owner] += 1;
+                let next = next
+                    .entry(self.properties[*owner].key.as_str())
+                    .or_default();
+                *segment = *next;
+                *next += 1;
             }
         }
     }

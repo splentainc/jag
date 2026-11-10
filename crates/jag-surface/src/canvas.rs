@@ -13,6 +13,7 @@ mod inverse_mask;
 mod mask_cache;
 mod mask_size;
 mod masks;
+mod polygon_mask;
 mod scroll_scene;
 mod shapes;
 mod spatial;
