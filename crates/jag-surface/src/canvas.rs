@@ -8,12 +8,14 @@ use jag_draw::{
 mod clips;
 mod committed;
 mod helpers;
+mod image_resources;
 mod images_state;
 mod inverse_mask;
 mod mask_cache;
 mod mask_size;
 mod masks;
 mod polygon_mask;
+pub use image_resources::ImageResourceBindings;
 mod scroll_scene;
 mod shapes;
 mod spatial;
