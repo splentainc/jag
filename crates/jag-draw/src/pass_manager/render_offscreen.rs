@@ -262,8 +262,9 @@ impl PassManager {
             }
             all_items.sort_by_key(|(z, _)| *z);
 
-            for &(_, item) in all_items.iter() {
-                if let DrawItemOff::BackdropBlur(i) = item {
+            let mut remaining = all_items.as_slice();
+            while let Some(&(_, first)) = remaining.first() {
+                if let DrawItemOff::BackdropBlur(i) = first {
                     self.draw_backdrop_blur_rect(
                         encoder,
                         allocator,
@@ -273,8 +274,18 @@ impl PassManager {
                         &backdrop_blur_draws[i],
                         queue,
                     );
+                    remaining = &remaining[1..];
                     continue;
                 }
+                // Only a backdrop samples the destination between draws. Keep
+                // every ordinary z-sorted run in one pass so Metal does not
+                // allocate a render context and attachment state per item.
+                let end = remaining
+                    .iter()
+                    .position(|(_, item)| matches!(item, DrawItemOff::BackdropBlur(_)))
+                    .unwrap_or(remaining.len());
+                let (run, rest) = remaining.split_at(end);
+                remaining = rest;
 
                 let depth_attachment = Some(wgpu::RenderPassDepthStencilAttachment {
                     view: self.depth_view(),
@@ -301,107 +312,110 @@ impl PassManager {
                         timestamp_writes: None,
                     });
 
-                match item {
-                    DrawItemOff::BackdropBlur(_) => unreachable!(),
-                    DrawItemOff::TransparentBatch(i) => {
-                        let batch = &transparent_batches[i];
-                        if let Some(c) = batch.clip {
-                            if !set_scissor_for_clip(&mut pass, c, width, height) {
-                                continue;
+                for &(_, item) in run {
+                    match item {
+                        DrawItemOff::BackdropBlur(_) => unreachable!(),
+                        DrawItemOff::TransparentBatch(i) => {
+                            let batch = &transparent_batches[i];
+                            if let Some(c) = batch.clip {
+                                if !set_scissor_for_clip(&mut pass, c, width, height) {
+                                    continue;
+                                }
+                            }
+                            self.transparent_solid_offscreen.record_index_range(
+                                &mut pass,
+                                &vp_bg_off,
+                                transparent_scene,
+                                batch.index_start,
+                                batch.index_count,
+                            );
+                            if batch.clip.is_some() {
+                                pass.set_scissor_rect(0, 0, width, height);
                             }
                         }
-                        self.transparent_solid_offscreen.record_index_range(
-                            &mut pass,
-                            &vp_bg_off,
-                            transparent_scene,
-                            batch.index_start,
-                            batch.index_count,
-                        );
-                        if batch.clip.is_some() {
-                            pass.set_scissor_rect(0, 0, width, height);
+                        DrawItemOff::TextGroup(i) => {
+                            let (_z, vbuf, ibuf, index_count, z_bg, _z_buf, clip) =
+                                &text_groups_off[i];
+                            if *index_count > 0 {
+                                if let Some(c) = clip {
+                                    if !set_scissor_for_clip(&mut pass, *c, width, height) {
+                                        continue;
+                                    }
+                                }
+                                pass.set_pipeline(&self.text_offscreen.pipeline);
+                                pass.set_bind_group(0, &vp_bg_text_off, &[]);
+                                pass.set_bind_group(1, z_bg, &[]);
+                                pass.set_bind_group(2, &self.text_bind_group, &[]);
+                                pass.set_vertex_buffer(0, vbuf.slice(..));
+                                pass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint16);
+                                pass.draw_indexed(0..*index_count, 0, 0..1);
+                                if clip.is_some() {
+                                    pass.set_scissor_rect(0, 0, width, height);
+                                }
+                            }
                         }
-                    }
-                    DrawItemOff::TextGroup(i) => {
-                        let (_z, vbuf, ibuf, index_count, z_bg, _z_buf, clip) = &text_groups_off[i];
-                        if *index_count > 0 {
+                        DrawItemOff::Image(i) => {
+                            let (vbuf, ibuf, vp_bg_img, z_bg_img, tex_bg, params_bg, _, _, clip) =
+                                &image_resources_off[i];
                             if let Some(c) = clip {
                                 if !set_scissor_for_clip(&mut pass, *c, width, height) {
                                     continue;
                                 }
                             }
-                            pass.set_pipeline(&self.text_offscreen.pipeline);
-                            pass.set_bind_group(0, &vp_bg_text_off, &[]);
-                            pass.set_bind_group(1, z_bg, &[]);
-                            pass.set_bind_group(2, &self.text_bind_group, &[]);
-                            pass.set_vertex_buffer(0, vbuf.slice(..));
-                            pass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint16);
-                            pass.draw_indexed(0..*index_count, 0, 0..1);
+                            self.image_offscreen.record(
+                                &mut pass, vp_bg_img, z_bg_img, tex_bg, params_bg, vbuf, ibuf, 6,
+                            );
                             if clip.is_some() {
                                 pass.set_scissor_rect(0, 0, width, height);
                             }
                         }
-                    }
-                    DrawItemOff::Image(i) => {
-                        let (vbuf, ibuf, vp_bg_img, z_bg_img, tex_bg, params_bg, _, _, clip) =
-                            &image_resources_off[i];
-                        if let Some(c) = clip {
-                            if !set_scissor_for_clip(&mut pass, *c, width, height) {
-                                continue;
+                        DrawItemOff::Svg(i) => {
+                            let (vbuf, ibuf, vp_bg_svg, z_bg_svg, tex_bg, params_bg, _, _, clip) =
+                                &svg_resources_off[i];
+                            if let Some(c) = clip {
+                                if !set_scissor_for_clip(&mut pass, *c, width, height) {
+                                    continue;
+                                }
+                            }
+                            self.image_offscreen.record(
+                                &mut pass, vp_bg_svg, z_bg_svg, tex_bg, params_bg, vbuf, ibuf, 6,
+                            );
+                            if clip.is_some() {
+                                pass.set_scissor_rect(0, 0, width, height);
                             }
                         }
-                        self.image_offscreen.record(
-                            &mut pass, vp_bg_img, z_bg_img, tex_bg, params_bg, vbuf, ibuf, 6,
-                        );
-                        if clip.is_some() {
-                            pass.set_scissor_rect(0, 0, width, height);
-                        }
-                    }
-                    DrawItemOff::Svg(i) => {
-                        let (vbuf, ibuf, vp_bg_svg, z_bg_svg, tex_bg, params_bg, _, _, clip) =
-                            &svg_resources_off[i];
-                        if let Some(c) = clip {
-                            if !set_scissor_for_clip(&mut pass, *c, width, height) {
-                                continue;
+                        DrawItemOff::ExternalTexture(i) => {
+                            let (
+                                vbuf,
+                                ibuf,
+                                vp_bg_ext,
+                                z_bg_ext,
+                                tex_bg,
+                                params_bg,
+                                _,
+                                _,
+                                base_vertex,
+                                clip,
+                            ) = &*ext_resources_off[i];
+                            if let Some(c) = clip {
+                                if !set_scissor_for_clip(&mut pass, *c, width, height) {
+                                    continue;
+                                }
                             }
-                        }
-                        self.image_offscreen.record(
-                            &mut pass, vp_bg_svg, z_bg_svg, tex_bg, params_bg, vbuf, ibuf, 6,
-                        );
-                        if clip.is_some() {
-                            pass.set_scissor_rect(0, 0, width, height);
-                        }
-                    }
-                    DrawItemOff::ExternalTexture(i) => {
-                        let (
-                            vbuf,
-                            ibuf,
-                            vp_bg_ext,
-                            z_bg_ext,
-                            tex_bg,
-                            params_bg,
-                            _,
-                            _,
-                            base_vertex,
-                            clip,
-                        ) = &*ext_resources_off[i];
-                        if let Some(c) = clip {
-                            if !set_scissor_for_clip(&mut pass, *c, width, height) {
-                                continue;
+                            self.image_offscreen.record_at_vertex(
+                                &mut pass,
+                                vp_bg_ext,
+                                z_bg_ext,
+                                tex_bg,
+                                params_bg,
+                                vbuf,
+                                ibuf,
+                                6,
+                                *base_vertex,
+                            );
+                            if clip.is_some() {
+                                pass.set_scissor_rect(0, 0, width, height);
                             }
-                        }
-                        self.image_offscreen.record_at_vertex(
-                            &mut pass,
-                            vp_bg_ext,
-                            z_bg_ext,
-                            tex_bg,
-                            params_bg,
-                            vbuf,
-                            ibuf,
-                            6,
-                            *base_vertex,
-                        );
-                        if clip.is_some() {
-                            pass.set_scissor_rect(0, 0, width, height);
                         }
                     }
                 }
@@ -413,3 +427,7 @@ impl PassManager {
         allocator.release_texture(targets.color);
     }
 }
+
+#[cfg(test)]
+#[path = "offscreen_pass_tests.rs"]
+mod tests;

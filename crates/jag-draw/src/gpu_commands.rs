@@ -1,5 +1,10 @@
 //! Version-insulated render-pass recording operations.
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static OFFSCREEN_PASSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 pub(crate) struct RenderPassDescriptor<'tex, 'desc> {
     pub(crate) label: Option<&'desc str>,
     pub(crate) color_attachments: &'desc [Option<wgpu::RenderPassColorAttachment<'tex>>],
@@ -20,6 +25,10 @@ impl CommandEncoderExt for wgpu::CommandEncoder {
         &'pass mut self,
         descriptor: RenderPassDescriptor<'pass, 'desc>,
     ) -> wgpu::RenderPass<'pass> {
+        #[cfg(test)]
+        if descriptor.label == Some("unified-offscreen-transparent-pass") {
+            OFFSCREEN_PASSES.with(|count| count.set(count.get() + 1));
+        }
         let descriptor = wgpu::RenderPassDescriptor {
             label: descriptor.label,
             color_attachments: descriptor.color_attachments,

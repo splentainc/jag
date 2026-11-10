@@ -75,53 +75,6 @@ struct GlyphRunKey {
     provider_id: usize,
 }
 
-struct GlyphRunCache {
-    map: std::sync::Mutex<
-        std::collections::HashMap<GlyphRunKey, std::sync::Arc<Vec<RasterizedGlyph>>>,
-    >,
-    max_entries: usize,
-}
-
-impl GlyphRunCache {
-    fn new(max_entries: usize) -> Self {
-        Self {
-            map: std::sync::Mutex::new(std::collections::HashMap::new()),
-            max_entries: max_entries.max(1),
-        }
-    }
-
-    fn get(&self, key: &GlyphRunKey) -> Option<std::sync::Arc<Vec<RasterizedGlyph>>> {
-        let map = self.map.lock().unwrap();
-        map.get(key).cloned()
-    }
-
-    fn insert(
-        &self,
-        key: GlyphRunKey,
-        glyphs: Vec<RasterizedGlyph>,
-    ) -> std::sync::Arc<Vec<RasterizedGlyph>> {
-        let mut map = self.map.lock().unwrap();
-
-        // Simple eviction strategy to keep memory bounded:
-        // when we grow past 2x capacity with new keys, clear everything.
-        if map.len() >= self.max_entries * 2 && !map.contains_key(&key) {
-            map.clear();
-        }
-
-        if let Some(existing) = map.get(&key) {
-            return existing.clone();
-        }
-
-        let arc = std::sync::Arc::new(glyphs);
-        map.insert(key, arc.clone());
-        arc
-    }
-
-    fn clear(&self) {
-        self.map.lock().unwrap().clear();
-    }
-}
-
 static GLYPH_RUN_CACHE: std::sync::OnceLock<GlyphRunCache> = std::sync::OnceLock::new();
 
 fn global_glyph_run_cache() -> &'static GlyphRunCache {

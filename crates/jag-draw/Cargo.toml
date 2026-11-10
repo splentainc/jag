@@ -42,3 +42,6 @@ pdf-writer = { workspace = true, optional = true }
 default = []
 fontdue-rgb-patch = []
 pdf_export = ["dep:pdf-writer"]
+
+[dev-dependencies]
+pollster = { workspace = true }
