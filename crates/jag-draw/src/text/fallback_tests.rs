@@ -72,4 +72,32 @@ mod fallback_coverage_tests {
             GlyphMask::Color(mask) => mask.data.iter().any(|&value| value != 0),
         }));
     }
+
+    #[test]
+    fn mapped_coverage_scan_agrees_with_fontdb_data_access() {
+        let provider = JagTextProvider::from_system_fonts(SubpixelOrientation::RGB).unwrap();
+        let db = provider.font_db.as_ref().expect("system font database");
+        let faces: Vec<_> = db.faces().take(60).collect();
+        assert!(!faces.is_empty());
+        for ch in ['A', '\u{0627}', '\u{4e2d}', '\u{1019}'] {
+            for face in &faces {
+                let expected = db
+                    .with_face_data(face.id, |bytes, index| {
+                        swash::FontRef::from_index(bytes, index as usize)
+                            .is_some_and(|font| font.charmap().map(ch) != 0)
+                    })
+                    .unwrap_or(false);
+                // Twice: the second call reads the cached mapping.
+                for _ in 0..2 {
+                    assert_eq!(
+                        JagTextProvider::scan_face_supports(face, ch),
+                        expected,
+                        "{} U+{:04X}",
+                        face.post_script_name,
+                        ch as u32
+                    );
+                }
+            }
+        }
+    }
 }

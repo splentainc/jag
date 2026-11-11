@@ -1,4 +1,39 @@
+/// Font files already mapped for coverage scans, by path. A scan visits most
+/// installed faces for each character that no hinted family covers, and
+/// reopening every file each time dominated first layout of multilingual pages.
+fn mapped_font(path: &std::path::Path) -> Option<std::sync::Arc<memmap2::Mmap>> {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, OnceLock};
+    static MAPPED: OnceLock<Mutex<HashMap<std::path::PathBuf, Option<Arc<memmap2::Mmap>>>>> =
+        OnceLock::new();
+    let mut mapped = MAPPED.get_or_init(Default::default).lock().ok()?;
+    mapped
+        .entry(path.to_path_buf())
+        .or_insert_with(|| {
+            let file = std::fs::File::open(path).ok()?;
+            // SAFETY: the same read-only mapping `jag_text::FontFace::from_path`
+            // makes of the same installed font files.
+            unsafe { memmap2::Mmap::map(&file) }.ok().map(Arc::new)
+        })
+        .clone()
+}
+
 impl JagTextProvider {
+    /// Whether the installed `face` has a glyph for `ch`, without loading the
+    /// whole face.
+    fn scan_face_supports(face: &fontdb::FaceInfo, ch: char) -> bool {
+        let covers = |bytes: &[u8]| {
+            swash::FontRef::from_index(bytes, face.index as usize)
+                .is_some_and(|font| font.charmap().map(ch) != 0)
+        };
+        match &face.source {
+            fontdb::Source::File(path) => mapped_font(path).is_some_and(|map| covers(&map)),
+            fontdb::Source::Binary(data) | fontdb::Source::SharedFile(_, data) => {
+                covers(data.as_ref().as_ref())
+            }
+        }
+    }
+
     fn face_key(face: &jag_text::FontFace) -> (usize, usize) {
         let bytes = face.borrowed_bytes();
         (bytes.as_ptr() as usize, face.index())
@@ -226,13 +261,9 @@ impl JagTextProvider {
                     )
                 });
                 resolved = faces.into_iter().find_map(|face| {
-                    let supports = db
-                        .with_face_data(face.id, |bytes, index| {
-                            swash::FontRef::from_index(bytes, index as usize)
-                                .is_some_and(|font| font.charmap().map(ch) != 0)
-                        })
-                        .unwrap_or(false);
-                    supports.then(|| Self::load_face_from_db(face)).flatten()
+                    Self::scan_face_supports(face, ch)
+                        .then(|| Self::load_face_from_db(face))
+                        .flatten()
                 });
             }
         }
