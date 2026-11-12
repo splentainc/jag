@@ -1,7 +1,7 @@
 use jag_draw::{Brush, ColorLinPremul, Path, Rect, RoundedRadii, RoundedRect, Stroke};
 
 use super::Canvas;
-use super::helpers::{intersect_rect, path_bounds, rect_path};
+use super::helpers::{intersect_rect, path_bounds, rect_in_rounded_clip, rect_path};
 
 impl Canvas {
     /// Set the frame clear/background color (premultiplied linear RGBA).
@@ -16,10 +16,10 @@ impl Canvas {
         // ancestor's corner radii. `painter.rect` clips only to an axis-aligned
         // rectangle, so when an active rounded clip has a non-zero radius we route
         // the rect through the path-fill clipper (the same machinery `fill_path`
-        // uses), which cuts each triangle to the rounded region. Non-solid brushes
-        // (gradients) keep the rectangular path — a gradient-filled child of a
-        // rounded box would still square its corners, a known gap tracked
-        // separately rather than silently treated as handled.
+        // uses), which cuts each triangle to the rounded region. That clipper takes
+        // a solid color only, so a gradient is drawn as the rounded rect its
+        // visible part forms. A gradient rect that cuts through a corner's arc has
+        // no such rounded rect and keeps the rectangular path, squaring that corner.
         if let Brush::Solid(color) = brush {
             if let Some(clip) = self.rounded_clip_local() {
                 if clip.radii.iter().any(|r| *r > 0.0) {
@@ -29,6 +29,16 @@ impl Canvas {
                     }
                     return;
                 }
+            }
+        }
+        if !matches!(brush, Brush::Solid(_)) {
+            let rounded = self
+                .rounded_clip_local()
+                .filter(|clip| clip.is_rounded())
+                .and_then(|clip| rect_in_rounded_clip(rect, clip));
+            if let Some(shape) = rounded {
+                self.painter.rounded_rect(shape, brush, z);
+                return;
             }
         }
         if let Some(clip) = self.clip_rect_local() {

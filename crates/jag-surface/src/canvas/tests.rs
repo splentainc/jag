@@ -296,6 +296,74 @@ mod fill_rect_rounded_clip_tests {
         assert!(!cmds.iter().any(|c| matches!(c, Command::FillPath { .. })));
     }
 
+    fn gradient() -> Brush {
+        Brush::LinearGradient {
+            start: [0.0, 0.0],
+            end: [40.0, 0.0],
+            stops: vec![
+                (0.0, ColorLinPremul::default()),
+                (1.0, ColorLinPremul::default()),
+            ],
+        }
+    }
+
+    fn rounded_rects(canvas: &Canvas) -> Vec<RoundedRect> {
+        let cmds = &canvas.display_list().commands;
+        cmds.iter()
+            .filter_map(|c| match c {
+                Command::DrawRoundedRect { rrect, .. } => Some(*rrect),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn clip_40_radius_16(canvas: &mut Canvas) {
+        canvas.push_clip_rounded_rect(RoundedRect {
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 40.0,
+                h: 40.0,
+            },
+            radii: RoundedRadii {
+                tl: 16.0,
+                tr: 16.0,
+                br: 16.0,
+                bl: 16.0,
+            },
+        });
+    }
+
+    #[test]
+    fn gradient_fill_rect_under_rounded_clip_takes_the_corners_it_covers() {
+        let mut canvas = test_canvas();
+        clip_40_radius_16(&mut canvas);
+        // Larger than the clip: every corner is the clip's.
+        canvas.fill_rect(-5.0, -5.0, 50.0, 50.0, gradient(), 5);
+        // The bottom half: only the bottom corners round.
+        canvas.fill_rect(0.0, 20.0, 40.0, 20.0, gradient(), 5);
+
+        let drawn = rounded_rects(&canvas);
+        assert_eq!(drawn.len(), 2);
+        assert_eq!((drawn[0].rect.w, drawn[0].rect.h), (40.0, 40.0));
+        let all = drawn[0].radii;
+        assert_eq!([all.tl, all.tr, all.br, all.bl], [16.0; 4]);
+        let half = drawn[1].radii;
+        assert_eq!([half.tl, half.tr, half.br, half.bl], [0.0, 0.0, 16.0, 16.0]);
+    }
+
+    #[test]
+    fn gradient_fill_rect_cutting_a_corner_arc_stays_a_rect() {
+        let mut canvas = test_canvas();
+        clip_40_radius_16(&mut canvas);
+        // Starts 5 below the top edge: inside the top corners' arcs.
+        canvas.fill_rect(0.0, 5.0, 40.0, 20.0, gradient(), 5);
+
+        assert!(rounded_rects(&canvas).is_empty());
+        let cmds = &canvas.display_list().commands;
+        assert!(cmds.iter().any(|c| matches!(c, Command::DrawRect { .. })));
+    }
+
     #[test]
     fn clipped_box_shadow_carries_local_clip_under_transform() {
         let mut canvas = test_canvas();

@@ -159,3 +159,47 @@ pub(crate) fn clip_glyph_to_rect(
     let new_origin = [glyph_x0 + start_x as f32, glyph_y0 + start_y as f32];
     Some((clipped, new_origin))
 }
+
+/// Edges closer than this are the same edge, as `Canvas::rounded_rect` treats them.
+const SAME_EDGE: f32 = 0.5;
+
+/// The part of `rect` inside the rounded `clip`, when that part is itself a
+/// rounded rect: every rounded corner of the clip is either a corner of the
+/// part or clear of it. `None` when `rect` misses the clip or cuts through a
+/// corner's arc.
+pub(crate) fn rect_in_rounded_clip(
+    rect: Rect,
+    clip: jag_draw::PathClip,
+) -> Option<jag_draw::RoundedRect> {
+    let part = intersect_rect(rect, clip.rect)?;
+    let left = part.x - clip.rect.x;
+    let top = part.y - clip.rect.y;
+    let right = (clip.rect.x + clip.rect.w) - (part.x + part.w);
+    let bottom = (clip.rect.y + clip.rect.h) - (part.y + part.h);
+    // Gaps between the part and each clip corner, in `PathClip::radii` order.
+    let gaps = [(left, top), (right, top), (right, bottom), (left, bottom)];
+    let mut radii = [0.0f32; 4];
+    for (i, (dx, dy)) in gaps.into_iter().enumerate() {
+        let radius = clip.radii[i];
+        if radius <= 0.0 {
+            continue;
+        }
+        if dx < SAME_EDGE && dy < SAME_EDGE {
+            if part.w < radius || part.h < radius {
+                return None;
+            }
+            radii[i] = radius;
+        } else if dx < radius && dy < radius {
+            return None;
+        }
+    }
+    Some(jag_draw::RoundedRect {
+        rect: part,
+        radii: jag_draw::RoundedRadii {
+            tl: radii[0],
+            tr: radii[1],
+            br: radii[2],
+            bl: radii[3],
+        },
+    })
+}
