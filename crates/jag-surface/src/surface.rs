@@ -16,6 +16,7 @@ mod frame;
 mod masks;
 mod opacity;
 mod precision;
+mod raw_images;
 mod retained_layers;
 mod scroll_tiles;
 mod spatial;
@@ -64,6 +65,7 @@ pub struct CachedFrameData {
         [f32; 2],
         i32,
         f32,
+        Transform2D,
         Option<jag_draw::Rect>,
         Option<jag_draw::RoundedRectClipGpu>,
     )>,

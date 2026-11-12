@@ -24,6 +24,9 @@ jag-shaders = { path = "../jag-shaders", version = "0.1.2" }
 fontdue = { workspace = true }
 memmap2 = "0.9"
 image = { workspace = true }
+# No `asm` feature: it needs nasm at build time on x86.
+rav1d = { version = "1.1", default-features = false, features = ["bitdepth_8", "bitdepth_16"] }
+avif-parse = "2.1"
 swash = { workspace = true }
 unicode-segmentation = { workspace = true }
 lyon_tessellation = "1.0"

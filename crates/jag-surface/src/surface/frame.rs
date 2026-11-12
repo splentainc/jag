@@ -1,11 +1,7 @@
-use super::{
-    CachedFrameData, JagSurface, apply_transform_to_point, calculate_image_fit,
-    set_last_raw_image_rect,
-};
+use super::{CachedFrameData, JagSurface, calculate_image_fit};
 use crate::canvas::Canvas;
 use anyhow::Result;
 use jag_draw::{ColorLinPremul, Command, HitIndex, wgpu};
-use std::sync::Arc;
 impl JagSurface {
     /// Finish the frame by rendering accumulated commands to the provided surface texture.
     pub fn end_frame(&mut self, frame: wgpu::SurfaceTexture, canvas: Canvas) -> Result<()> {
@@ -125,12 +121,7 @@ impl JagSurface {
                         *opacity,
                         *transform,
                         *clip,
-                        rounded_clip
-                            .as_ref()
-                            .map(|rc| jag_draw::RoundedRectClipGpu {
-                                rect: [rc.rect.x, rc.rect.y, rc.rect.w, rc.rect.h],
-                                radii: rc.radii,
-                            }),
+                        rounded_clip.map(Into::into),
                     )
                 },
             )
@@ -150,6 +141,7 @@ impl JagSurface {
             [f32; 2],
             i32,
             f32,
+            jag_draw::Transform2D,
             Option<jag_draw::Rect>,
             Option<jag_draw::RoundedRectClipGpu>,
         )> = Vec::new();
@@ -161,127 +153,26 @@ impl JagSurface {
 
             if let Some((tex_view, img_w, img_h)) = self.pass.try_get_image_view(&resolved_path) {
                 drop(tex_view); // Only need dimensions here
-                let transformed_origin = apply_transform_to_point(*origin, *transform);
-                let (render_origin, render_size) = calculate_image_fit(
-                    transformed_origin,
-                    *size,
-                    img_w as f32,
-                    img_h as f32,
-                    *fit,
-                );
+                // Fit in the element's own space; the transform then places
+                // the fitted quad, including any scale or rotation.
+                let (render_origin, render_size) =
+                    calculate_image_fit(*origin, *size, img_w as f32, img_h as f32, *fit);
                 prepared_images.push((
                     resolved_path.clone(),
                     render_origin,
                     render_size,
                     *z,
                     *opacity,
+                    *transform,
                     *clip,
-                    rounded_clip
-                        .as_ref()
-                        .map(|rc| jag_draw::RoundedRectClipGpu {
-                            rect: [rc.rect.x, rc.rect.y, rc.rect.w, rc.rect.h],
-                            radii: rc.radii,
-                        }),
+                    rounded_clip.map(Into::into),
                 ));
             } else {
                 self.pending_image_loads |= self.pass.request_image_load(&resolved_path);
             }
         }
 
-        // Process raw image draws (e.g., WebView CEF pixels)
-        // Optimizations:
-        // 1. Always reuse textures - only recreate if size changes
-        // 2. Use BGRA format to match CEF native output (no CPU conversion)
-        // 3. Support dirty rect partial uploads
-        for (i, raw_draw) in canvas.raw_image_draws.iter().enumerate() {
-            if raw_draw.src_width == 0 || raw_draw.src_height == 0 {
-                continue;
-            }
-
-            // Use a fixed path for webview texture - reused across frames
-            let raw_path = std::path::PathBuf::from(format!("__webview_texture_{}__", i));
-
-            // If pixels are empty, reuse cached texture from previous frame
-            let has_new_pixels = !raw_draw.pixels.is_empty();
-
-            // Check if we need a new texture (only if size changed)
-            let need_new_texture =
-                if let Some((_, cached_w, cached_h)) = self.pass.try_get_image_view(&raw_path) {
-                    // Only recreate if dimensions changed - always reuse otherwise
-                    cached_w != raw_draw.src_width || cached_h != raw_draw.src_height
-                } else {
-                    true
-                };
-
-            // Create texture only when needed (first time or size change)
-            if need_new_texture && has_new_pixels {
-                // Create texture with BGRA format to match CEF's native output
-                // This eliminates CPU-side BGRA->RGBA conversion
-                let texture = crate::gpu_texture::create_texture_2d(
-                    &self.device,
-                    "cef-webview-texture",
-                    crate::gpu_texture::Texture2dSpec {
-                        width: raw_draw.src_width,
-                        height: raw_draw.src_height,
-                        // BGRA format matches CEF native output - no conversion needed
-                        format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                    },
-                );
-
-                // Store in image cache for reuse
-                self.pass.store_loaded_image(
-                    &raw_path,
-                    Arc::new(texture),
-                    raw_draw.src_width,
-                    raw_draw.src_height,
-                );
-            }
-
-            // Upload pixels only when we have new data
-            if has_new_pixels {
-                if let Some((tex, _, _)) = self.pass.get_cached_texture(&raw_path) {
-                    // Always upload full frame - CEF provides complete buffer even for partial updates.
-                    // The dirty_rects are informational but the buffer is always complete.
-                    // This ensures no flickering from partial/stale data.
-                    crate::gpu_texture::upload_texture_2d(
-                        &self.queue,
-                        &tex,
-                        [raw_draw.src_width, raw_draw.src_height],
-                        raw_draw.src_width * 4,
-                        &raw_draw.pixels,
-                    );
-                }
-            }
-
-            // Skip rendering if no cached texture exists (no pixels uploaded yet)
-            if self.pass.try_get_image_view(&raw_path).is_none() {
-                continue;
-            }
-
-            // Apply the canvas transform to the origin - same as regular images.
-            // The origin from draw_raw_image is in local (viewport) coordinates and
-            // needs to be transformed to screen coordinates.
-            let transformed_origin = apply_transform_to_point(raw_draw.origin, raw_draw.transform);
-
-            // Store the transformed rect for hit testing (accessible via get_last_raw_image_rect)
-            set_last_raw_image_rect(
-                transformed_origin[0],
-                transformed_origin[1],
-                raw_draw.dst_size[0],
-                raw_draw.dst_size[1],
-            );
-
-            prepared_images.push((
-                raw_path,
-                transformed_origin,
-                raw_draw.dst_size,
-                raw_draw.z,
-                1.0,
-                raw_draw.clip,
-                None, // no rounded clip for raw images
-            ));
-        }
+        self.prepare_raw_image_draws(&canvas.raw_image_draws, &mut prepared_images);
 
         let glyph_draws = self.prepare_frame_glyphs(
             canvas.glyph_draws.clone(),

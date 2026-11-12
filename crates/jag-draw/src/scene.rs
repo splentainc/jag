@@ -125,13 +125,21 @@ pub struct RoundedRect {
 }
 
 /// Rounded-rect clip data ready for the GPU image shader.
-/// Rect and radii are in device pixels.
+/// Rect and radii are in clip space, which `from_device` reaches from device
+/// pixels. For a clip that is axis-aligned on screen the two spaces coincide.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RoundedRectClipGpu {
-    /// [x, y, w, h] in device pixels.
+    /// [x, y, w, h] in clip space.
     pub rect: [f32; 4],
-    /// [tl, tr, br, bl] corner radii in device pixels.
+    /// [tl, tr, br, bl] corner radii in clip space.
     pub radii: [f32; 4],
+    /// Affine map from a device pixel to clip space, as `Transform2D::m`.
+    pub from_device: [f32; 6],
+}
+
+impl RoundedRectClipGpu {
+    /// `from_device` for a clip that is axis-aligned in device pixels.
+    pub const DEVICE_ALIGNED: [f32; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
 }
 
 /// Clip region for a filled/stroked path's tessellated triangles, in the path's

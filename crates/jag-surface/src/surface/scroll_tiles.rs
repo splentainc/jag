@@ -55,10 +55,27 @@ struct Owner {
     origin: [f32; 2],
 }
 
+/// Shader clip for a clip rect recorded in `transform`'s local space, with
+/// radii the canvas already scaled to device pixels.
+fn rounded_clip(
+    local: Rect,
+    radii: [f32; 4],
+    transform: Transform2D,
+    scale: f32,
+) -> Option<jag_draw::RoundedRectClipGpu> {
+    let clip = crate::canvas::shader_clip(local, [0.0; 4], transform, scale)?;
+    Some(jag_draw::RoundedRectClipGpu {
+        radii,
+        ..clip.into()
+    })
+}
+
 #[derive(Clone, Copy)]
 struct Clip {
     rect: Rect,
-    authored: Rect,
+    /// The authored rect before `transform`; a rotated clip needs both.
+    local: Rect,
+    transform: Transform2D,
     rounded: Option<jag_draw::RoundedRectClipGpu>,
 }
 
@@ -164,7 +181,8 @@ impl JagSurface {
         }
         let mut clips = vec![Clip {
             rect: viewport_rect,
-            authored: viewport_rect,
+            local: viewport_rect,
+            transform: Transform2D::identity(),
             rounded: None,
         }];
         let mut transforms = vec![Transform2D::identity()];
@@ -257,25 +275,19 @@ impl JagSurface {
                 }
                 Command::PushClip(clip) => {
                     let parent = *clips.last().unwrap();
-                    let rect = transformed_rect_bounds(clip.0, *transforms.last().unwrap());
+                    let transform = *transforms.last().unwrap();
+                    let rect = transformed_rect_bounds(clip.0, transform);
                     clips.push(Clip {
                         rect: intersect(parent.rect, rect),
-                        authored: rect,
+                        local: clip.0,
+                        transform,
                         rounded: parent.rounded,
                     });
                     out.push(Pending::Command(command.clone()));
                 }
                 Command::ScrollClipRadii(radii) => {
                     let clip = clips.last_mut().unwrap();
-                    clip.rounded = Some(jag_draw::RoundedRectClipGpu {
-                        rect: [
-                            clip.authored.x * scale,
-                            clip.authored.y * scale,
-                            clip.authored.w * scale,
-                            clip.authored.h * scale,
-                        ],
-                        radii: *radii,
-                    });
+                    clip.rounded = rounded_clip(clip.local, *radii, clip.transform, scale);
                 }
                 Command::PopClip => {
                     ensure!(clips.len() > 1, "unbalanced clip");

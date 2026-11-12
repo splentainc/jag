@@ -165,3 +165,37 @@ fn backdrop_filter_inside_opacity_captures_the_group_framebuffer() {
 fn backdrop_filter_inside_filter_captures_the_group_framebuffer() {
     assert_backdrop_filter_captures_ancestor_framebuffer(true);
 }
+
+#[test]
+fn drop_shadow_keeps_source_rows_and_casts_downward() {
+    let Some(mut surface) = test_surface() else {
+        return;
+    };
+    let mut canvas = surface.begin_frame(16, 32);
+    canvas.clear(ColorLinPremul::default());
+    canvas.push_filter(FilterEffect::DropShadow(DropShadow {
+        offset: [0.0, 8.0],
+        blur_radius: 0.0,
+        color: SrgbColor::rgba(0, 0, 255, 255),
+    }));
+    canvas.fill_rect(
+        4.0,
+        2.0,
+        8.0,
+        6.0,
+        Brush::Solid(ColorLinPremul::from_srgba_u8([255, 0, 0, 255])),
+        1,
+    );
+    canvas.pop_filter();
+
+    let (width, _, pixels) = surface.end_frame_headless(canvas).unwrap();
+    let source = pixel(&pixels, width, 8, 5);
+    let shadow = pixel(&pixels, width, 8, 13);
+    let below = pixel(&pixels, width, 8, 24);
+    assert!(source[0] > 250 && source[2] < 5, "source moved: {source:?}");
+    assert!(
+        shadow[2] > 240 && shadow[3] > 240,
+        "shadow should sit 8px below the source: {shadow:?}"
+    );
+    assert!(below[3] < 5, "nothing belongs in the lower half: {below:?}");
+}

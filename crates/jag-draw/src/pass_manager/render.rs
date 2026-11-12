@@ -47,6 +47,7 @@ impl PassManager {
             [f32; 2],
             i32,
             f32,
+            crate::Transform2D,
             Option<crate::Rect>,
             Option<crate::RoundedRectClipGpu>,
         )],

@@ -101,3 +101,49 @@ fn run_cache_stays_bounded_across_many_different_document_working_sets() {
     assert!(cache.get(&key(0)).is_none());
     assert!(cache.get(&key(4095)).is_some());
 }
+
+#[test]
+fn scroll_ink_bounds_reuse_even_when_the_bitmap_exceeds_the_cache_budget() {
+    use crate::scene::{ColorLinPremul, FontStyle, Rect, TextRun};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct OversizedGlyph(AtomicUsize);
+    impl TextProvider for OversizedGlyph {
+        fn rasterize_run(&self, _: &TextRun) -> Vec<RasterizedGlyph> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            masks(GLYPH_RUN_CACHE_BYTES + 8192)
+        }
+    }
+
+    let cache = std::sync::Mutex::new(GlyphInkCache::default());
+    let provider = OversizedGlyph(AtomicUsize::new(0));
+    let run = TextRun {
+        features: Vec::new(),
+        spacing: None,
+        rtl: None,
+        source: None,
+        text: "Retained ink bounds across scroll commits".into(),
+        pos: [0.0; 2],
+        size: 28.0,
+        logical_size: 14.0,
+        color: ColorLinPremul::rgba(0, 0, 0, 255),
+        weight: 400.0,
+        style: FontStyle::Normal,
+        family: None,
+    };
+    let read_bounds = |origin| ink_bounds_with_cache(&cache, &provider, &run, origin, 2.0);
+    let bounds = read_bounds([0.4, -0.3]);
+    assert_eq!(
+        bounds,
+        Rect {
+            x: 0.5,
+            y: -0.5,
+            w: 1024.0,
+            h: 1024.5
+        }
+    );
+    assert_eq!(read_bounds([0.4, -0.3]), bounds);
+    assert_eq!(provider.0.load(Ordering::Relaxed), 1);
+    assert_eq!(read_bounds([1.4, -0.3]).x, 1.5);
+    assert_eq!(provider.0.load(Ordering::Relaxed), 2);
+}

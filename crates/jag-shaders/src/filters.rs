@@ -263,11 +263,14 @@ fn srgb_to_linear(value: vec3<f32>) -> vec3<f32> {
 }
 @fragment fn fs_main(input: VsOut) -> @location(0) vec4<f32> {
     // Composites in sRGB; a gamma-blend target's source already holds it.
-    let sampled = textureSample(source, source_sampler, input.uv);
+    // Render targets use top-left texels; the fullscreen triangle's UV has
+    // its origin at the NDC bottom-left. Flip so the pass preserves rows.
+    let uv = vec2(input.uv.x, 1.0 - input.uv.y);
+    let sampled = textureSample(source, source_sampler, uv);
     let unpremul = sampled.rgb / max(sampled.a, 0.00001);
     let source_rgb = select(linear_to_srgb(unpremul), unpremul, GAMMA_BLEND);
     let source_srgb = vec4(source_rgb * sampled.a, sampled.a);
-    let shadow_uv = input.uv - params.offset_uv;
+    let shadow_uv = uv - params.offset_uv;
     let inside = all(shadow_uv >= vec2(0.0)) && all(shadow_uv <= vec2(1.0));
     let mask = select(0.0, textureSample(blurred, source_sampler, shadow_uv).a, inside);
     let shadow_alpha = mask * params.color.a;

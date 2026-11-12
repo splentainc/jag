@@ -87,6 +87,9 @@ fn global_glyph_run_cache() -> &'static GlyphRunCache {
 /// using the newly available font faces instead of stale cached bitmaps.
 pub fn invalidate_glyph_run_cache() {
     global_glyph_run_cache().clear();
+    if let Some(cache) = GLYPH_INK_CACHE.get() {
+        *cache.lock().unwrap() = GlyphInkCache::default();
+    }
 }
 
 /// Convert an 8-bit grayscale coverage mask to an RGB subpixel mask.

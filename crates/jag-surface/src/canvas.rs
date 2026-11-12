@@ -6,6 +6,7 @@ use jag_draw::{
 };
 
 mod clips;
+pub(crate) use clips::shader_clip;
 mod committed;
 mod helpers;
 mod image_resources;
@@ -29,14 +30,28 @@ mod inverse_mask_tests;
 #[cfg(test)]
 mod tests;
 
-/// Rounded-rect clip region in device pixels, passed to the image shader
-/// for SDF-based fragment discard.
+/// Rounded-rect clip region passed to the image shader for SDF-based
+/// fragment discard. `rect` and `radii` are in clip space, which
+/// `from_device` reaches from device pixels; the two coincide unless the clip
+/// is rotated or skewed on screen.
 #[derive(Debug, Clone, Copy)]
 pub struct RoundedRectClip {
-    /// Bounding rect in device pixels.
+    /// Bounding rect in clip space.
     pub rect: Rect,
-    /// Per-corner radii in device pixels (tl, tr, br, bl).
+    /// Per-corner radii in clip space (tl, tr, br, bl).
     pub radii: [f32; 4],
+    /// Affine map from a device pixel to clip space, as `Transform2D::m`.
+    pub from_device: [f32; 6],
+}
+
+impl From<RoundedRectClip> for jag_draw::RoundedRectClipGpu {
+    fn from(clip: RoundedRectClip) -> Self {
+        Self {
+            rect: [clip.rect.x, clip.rect.y, clip.rect.w, clip.rect.h],
+            radii: clip.radii,
+            from_device: clip.from_device,
+        }
+    }
 }
 
 pub use jag_draw::ImageFitMode;

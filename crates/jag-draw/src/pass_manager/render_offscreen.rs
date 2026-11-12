@@ -42,6 +42,7 @@ impl PassManager {
             [f32; 2],
             i32,
             f32,
+            crate::Transform2D,
             Option<crate::Rect>,
             Option<crate::RoundedRectClipGpu>,
         )],
@@ -69,15 +70,14 @@ impl PassManager {
         // Pre-fetch (and lazily load) all image views before render pass (to avoid mutable borrow conflicts)
         let mut image_views_off: Vec<(
             wgpu::TextureView,
-            [f32; 2],
-            [f32; 2],
+            [[f32; 2]; 4],
             f32,
             f32,
             Option<crate::Rect>,
             Option<&crate::RoundedRectClipGpu>,
         )> = Vec::new();
         // eprintln!("🔍 Pre-fetching {} images for unified offscreen render", image_draws.len());
-        for (path, origin, size, z, opacity, clip, rounded_clip) in image_draws.iter() {
+        for (path, origin, size, z, opacity, transform, clip, rounded_clip) in image_draws.iter() {
             // eprintln!("  📦 Image at z={}: {:?}", z, path.file_name().unwrap_or_default());
             let tex_opt = if let Some(view) = self.try_get_image_view(std::path::Path::new(path)) {
                 Some(view)
@@ -87,8 +87,7 @@ impl PassManager {
             if let Some((tex_view, _w, _h)) = tex_opt {
                 image_views_off.push((
                     tex_view,
-                    *origin,
-                    *size,
+                    transformed_quad_points(*origin, *size, *transform),
                     *z as f32,
                     *opacity,
                     *clip,

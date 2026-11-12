@@ -1,13 +1,89 @@
 //! Clip stacks for direct draws and retained command streams.
 use super::{Canvas, RoundedRectClip, helpers::intersect_rect};
-use jag_draw::{Rect, RoundedRect};
+use jag_draw::{Rect, RoundedRect, Transform2D};
+
+/// Whether `transform` turns axis-aligned rects into non-axis-aligned ones.
+pub(crate) fn is_rotated(transform: Transform2D) -> bool {
+    let [_, b, c, _, _, _] = transform.m;
+    b != 0.0 || c != 0.0
+}
+
+/// Shader clip for `rect` with per-corner `radii` (tl, tr, br, bl), both in
+/// the local space of `transform`, where one logical unit is `scale` device
+/// pixels. `None` when the transform is singular.
+pub(crate) fn shader_clip(
+    rect: Rect,
+    radii: [f32; 4],
+    transform: Transform2D,
+    scale: f32,
+) -> Option<RoundedRectClip> {
+    let [a, b, c, d, e, f] = transform.m;
+    if !is_rotated(transform) {
+        // Translation and scale only: the clip is a device-space rect.
+        let sx = a.abs() * scale;
+        let sy = d.abs() * scale;
+        let radius_scale = sx.min(sy);
+        return Some(RoundedRectClip {
+            rect: Rect {
+                x: (rect.x * a + e).min((rect.x + rect.w) * a + e) * scale,
+                y: (rect.y * d + f).min((rect.y + rect.h) * d + f) * scale,
+                w: rect.w * sx,
+                h: rect.h * sy,
+            },
+            radii: radii.map(|r| r * radius_scale),
+            from_device: jag_draw::RoundedRectClipGpu::DEVICE_ALIGNED,
+        });
+    }
+    // Clip space is the local space scaled to device pixels along each local
+    // axis, so radii and edge antialiasing stay in pixels.
+    let sx = (a * a + b * b).sqrt() * scale;
+    let sy = (c * c + d * d).sqrt() * scale;
+    let det = a * d - b * c;
+    if det == 0.0 || !det.is_finite() {
+        return None;
+    }
+    // Inverse of the local-to-logical transform.
+    let (ia, ib, ic, id) = (d / det, -b / det, -c / det, a / det);
+    let (ie, i_f) = ((c * f - d * e) / det, (b * e - a * f) / det);
+    let radius_scale = sx.min(sy);
+    Some(RoundedRectClip {
+        rect: Rect {
+            x: rect.x * sx,
+            y: rect.y * sy,
+            w: rect.w * sx,
+            h: rect.h * sy,
+        },
+        radii: radii.map(|r| r * radius_scale),
+        // device px -> logical (divide by scale) -> local -> clip space.
+        from_device: [
+            ia * sx / scale,
+            ib * sy / scale,
+            ic * sx / scale,
+            id * sy / scale,
+            ie * sx,
+            i_f * sy,
+        ],
+    })
+}
 
 impl Canvas {
     // Expose some painter helpers for advanced users
     pub fn push_clip_rect(&mut self, rect: Rect) {
         self.push_clip_rect_inner(rect);
-        // No rounded clip for plain rect clips.
-        self.rounded_clip_stack.push(None);
+        // An axis-aligned rect is fully described by the scissor. Under
+        // rotation the scissor is only its bounding box, so the exact rect
+        // goes to the shader as a zero-radius rounded clip. The shader takes
+        // one clip, and an enclosing rounded clip keeps that slot.
+        let transform = self.painter.current_transform();
+        let enclosed = self.rounded_clip_stack.iter().any(Option::is_some);
+        let rounded = (is_rotated(transform) && !enclosed)
+            .then(|| shader_clip(rect, [0.0; 4], transform, self.dpi_scale))
+            .flatten();
+        self.rounded_clip_stack.push(rounded);
+        if rounded.is_some() {
+            self.painter
+                .extend_commands(&[jag_draw::Command::ScrollClipRadii([0.0; 4])]);
+        }
     }
 
     /// Push a rounded-rect clip.  The AABB is used for scissor-based coarse
@@ -15,30 +91,20 @@ impl Canvas {
     /// to image draws for SDF-based fragment discard in the shader.
     pub fn push_clip_rounded_rect(&mut self, rrect: RoundedRect) {
         self.push_clip_rect_inner(rrect.rect);
-        // Compute device-space rounded clip for the image shader.
-        let s = self.dpi_scale;
-        let t = self.painter.current_transform();
-        let [a, _b, _c, d, e, f] = t.m;
-        // Assumes axis-aligned transform (translation + uniform scale).
-        let sx = a.abs() * s;
-        let sy = d.abs() * s;
-        let dev_rect = Rect {
-            x: (rrect.rect.x * a + e) * s,
-            y: (rrect.rect.y * d + f) * s,
-            w: rrect.rect.w * sx,
-            h: rrect.rect.h * sy,
-        };
-        let scale_r = sx.min(sy); // uniform radius scale
-        let dev_radii = [
-            rrect.radii.tl * scale_r,
-            rrect.radii.tr * scale_r,
-            rrect.radii.br * scale_r,
-            rrect.radii.bl * scale_r,
+        let radii = [
+            rrect.radii.tl,
+            rrect.radii.tr,
+            rrect.radii.br,
+            rrect.radii.bl,
         ];
-        self.rounded_clip_stack.push(Some(RoundedRectClip {
-            rect: dev_rect,
-            radii: dev_radii,
-        }));
+        let clip = shader_clip(
+            rrect.rect,
+            radii,
+            self.painter.current_transform(),
+            self.dpi_scale,
+        );
+        let dev_radii = clip.map_or([0.0; 4], |clip| clip.radii);
+        self.rounded_clip_stack.push(clip);
         self.painter
             .extend_commands(&[jag_draw::Command::ScrollClipRadii(dev_radii)]);
     }
@@ -95,3 +161,7 @@ impl Canvas {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "clips_tests.rs"]
+mod tests;

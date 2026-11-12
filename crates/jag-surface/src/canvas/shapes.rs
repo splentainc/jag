@@ -85,10 +85,7 @@ impl Canvas {
             .flatten()
             .next()
             .cloned()
-            .map(|clip| jag_draw::RoundedRectClipGpu {
-                rect: [clip.rect.x, clip.rect.y, clip.rect.w, clip.rect.h],
-                radii: clip.radii,
-            });
+            .map(Into::into);
         let clip = self.clip_stack.last().copied().flatten();
         self.painter.external_texture_clipped(
             rect,

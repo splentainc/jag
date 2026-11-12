@@ -1,4 +1,4 @@
-//! Raster image cache: decode PNG/JPEG/GIF/WebP files into GPU textures and
+//! Raster image cache: decode PNG/JPEG/GIF/WebP/AVIF files into GPU textures and
 //! keep them in an LRU cache with a byte budget (256 MiB by default).
 //!
 //! Decoding notes:
@@ -375,8 +375,20 @@ impl ImageCache {
 /// image renders blank with no error. Content sniffing makes decoding robust to
 /// any extension/content mismatch.
 fn decode_image_from_path(path: &Path) -> Option<image::DynamicImage> {
-    image::ImageReader::open(path)
-        .ok()?
+    let bytes = std::fs::read(path).ok()?;
+    if crate::avif::is_avif(&bytes) {
+        return match crate::avif::decode_avif(&bytes) {
+            Ok(rgba) => Some(image::DynamicImage::ImageRgba8(rgba)),
+            Err(error) => {
+                eprintln!(
+                    "[jag-draw] AVIF decode failed for {}: {error}",
+                    path.display()
+                );
+                None
+            }
+        };
+    }
+    image::ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()
         .ok()?
         .decode()

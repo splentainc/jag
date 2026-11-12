@@ -201,6 +201,7 @@ pub(crate) fn set_gamma_blend_coverage(gamma_blend: bool) {
 // These complete-item files share the provider facade and its private font state.
 include!("text/support.rs");
 include!("text/run_cache.rs");
+include!("text/run_ink.rs");
 include!("text/providers.rs");
 include!("text/constructors.rs");
 include!("text/lazy_emoji.rs");

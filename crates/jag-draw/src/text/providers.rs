@@ -90,18 +90,7 @@ pub trait TextProvider: Send + Sync {
     }
 }
 
-/// Rasterize a text run using a global glyph-run cache.
-///
-/// This is intended for direct text rendering paths that repeatedly render the
-/// same text (e.g., during scrolling) and want to avoid re-shaping and
-/// re-rasterizing glyphs every frame. The cache key is based on:
-/// - text contents
-/// - run size in pixels
-/// - the concrete text provider instance
-pub fn rasterize_run_cached(
-    provider: &dyn TextProvider,
-    run: &crate::scene::TextRun,
-) -> std::sync::Arc<Vec<RasterizedGlyph>> {
+fn glyph_run_key(provider: &dyn TextProvider, run: &crate::scene::TextRun) -> GlyphRunKey {
     use crate::scene::FontStyle as SceneFontStyle;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::Hasher;
@@ -130,11 +119,15 @@ pub fn rasterize_run_cached(
     let weight_bits = run.weight.to_bits();
     // Use the concrete provider data pointer as a stable identifier for this run.
     let provider_id = (provider as *const dyn TextProvider as *const ()) as usize;
-    let key = GlyphRunKey {
-        source: run.source.as_ref().map(|source| (
-            source.bytes.start, source.bytes.end,
-            source.clip_start.map(f32::to_bits), source.clip_end.map(f32::to_bits),
-        )),
+    GlyphRunKey {
+        source: run.source.as_ref().map(|source| {
+            (
+                source.bytes.start,
+                source.bytes.end,
+                source.clip_start.map(f32::to_bits),
+                source.clip_end.map(f32::to_bits),
+            )
+        }),
         features: run.features.clone(),
         spacing: run.spacing.map(|s| [s.letter.to_bits(), s.word.to_bits()]),
         rtl: run.rtl,
@@ -145,8 +138,15 @@ pub fn rasterize_run_cached(
         style_bits,
         family_hash,
         provider_id,
-    };
+    }
+}
 
+/// Shape and rasterize a text run, reusing masks for the same text and font inputs.
+pub fn rasterize_run_cached(
+    provider: &dyn TextProvider,
+    run: &crate::scene::TextRun,
+) -> std::sync::Arc<Vec<RasterizedGlyph>> {
+    let key = glyph_run_key(provider, run);
     let cache = global_glyph_run_cache();
     if let Some(hit) = cache.get(&key) {
         return hit;

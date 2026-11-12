@@ -5,7 +5,7 @@ use jag_draw::{ColorLinPremul, Command, wgpu};
 use crate::canvas::Canvas;
 use crate::gpu_readback::ReadbackBuffer;
 
-use super::{JagSurface, apply_transform_to_point, calculate_image_fit};
+use super::{JagSurface, calculate_image_fit};
 
 impl JagSurface {
     /// Re-render using the internally-cached frame data with an updated GPU
@@ -331,12 +331,7 @@ impl JagSurface {
                         *opacity,
                         *transform,
                         *clip,
-                        rounded_clip
-                            .as_ref()
-                            .map(|rc| jag_draw::RoundedRectClipGpu {
-                                rect: [rc.rect.x, rc.rect.y, rc.rect.w, rc.rect.h],
-                                radii: rc.radii,
-                            }),
+                        rounded_clip.map(Into::into),
                     )
                 },
             )
@@ -353,6 +348,7 @@ impl JagSurface {
             [f32; 2],
             i32,
             f32,
+            jag_draw::Transform2D,
             Option<jag_draw::Rect>,
             Option<jag_draw::RoundedRectClipGpu>,
         )> = Vec::new();
@@ -362,32 +358,25 @@ impl JagSurface {
             let resolved_path = crate::resolve_asset_path(path);
             if let Some((tex_view, img_w, img_h)) = self.pass.try_get_image_view(&resolved_path) {
                 drop(tex_view);
-                let transformed_origin = apply_transform_to_point(*origin, *transform);
-                let (render_origin, render_size) = calculate_image_fit(
-                    transformed_origin,
-                    *size,
-                    img_w as f32,
-                    img_h as f32,
-                    *fit,
-                );
+                // Fit in the element's own space; the transform then places
+                // the fitted quad, including any scale or rotation.
+                let (render_origin, render_size) =
+                    calculate_image_fit(*origin, *size, img_w as f32, img_h as f32, *fit);
                 prepared_images.push((
                     resolved_path.clone(),
                     render_origin,
                     render_size,
                     *z,
                     *opacity,
+                    *transform,
                     *clip,
-                    rounded_clip
-                        .as_ref()
-                        .map(|rc| jag_draw::RoundedRectClipGpu {
-                            rect: [rc.rect.x, rc.rect.y, rc.rect.w, rc.rect.h],
-                            radii: rc.radii,
-                        }),
+                    rounded_clip.map(Into::into),
                 ));
             } else {
                 self.pending_image_loads |= self.pass.request_image_load(&resolved_path);
             }
         }
+        self.prepare_raw_image_draws(&canvas.raw_image_draws, &mut prepared_images);
 
         let size = target.size();
         anyhow::ensure!(

@@ -98,7 +98,7 @@ impl ImageRenderer {
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
-                    min_binding_size: std::num::NonZeroU64::new(48),
+                    min_binding_size: std::num::NonZeroU64::new(80),
                 },
                 count: None,
             }],
@@ -253,12 +253,17 @@ impl ImageRenderer {
         source_linear: bool,
         rounded_clip: Option<&crate::scene::RoundedRectClipGpu>,
     ) -> (wgpu::BindGroup, wgpu::Buffer) {
-        let (clip_enabled, clip_rect, clip_radii) = match rounded_clip {
-            Some(c) => (1.0_f32, c.rect, c.radii),
-            None => (0.0, [0.0; 4], [0.0; 4]),
+        let (clip_enabled, clip_rect, clip_radii, [a, b, c, d, e, f]) = match rounded_clip {
+            Some(clip) => (1.0_f32, clip.rect, clip.radii, clip.from_device),
+            None => (
+                0.0,
+                [0.0; 4],
+                [0.0; 4],
+                crate::scene::RoundedRectClipGpu::DEVICE_ALIGNED,
+            ),
         };
-        // Must match the WGSL ImageParams struct: 12 floats (3 vec4s).
-        let params: [f32; 12] = [
+        // Must match the WGSL ImageParams struct: 20 floats (5 vec4s).
+        let params: [f32; 20] = [
             opacity.clamp(0.0, 1.0),
             if premultiplied_input { 1.0 } else { 0.0 },
             clip_enabled,
@@ -271,6 +276,14 @@ impl ImageRenderer {
             clip_radii[1],
             clip_radii[2],
             clip_radii[3],
+            a,
+            c,
+            e,
+            0.0,
+            b,
+            d,
+            f,
+            0.0,
         ];
         let buffer = initialize_buffer_resource(
             device,

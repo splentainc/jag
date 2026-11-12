@@ -47,6 +47,8 @@ pub mod gpu_texture;
 mod gpu_transfer;
 
 mod allocator;
+mod avif;
+pub use avif::{avif_dimensions, decode_avif, is_avif};
 mod asset_stamp;
 pub use asset_stamp::AssetStamp;
 mod scroll_scene;

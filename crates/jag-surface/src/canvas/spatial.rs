@@ -98,10 +98,7 @@ impl Canvas {
                 .iter()
                 .rev()
                 .find_map(|c| *c)
-                .map(|c| jag_draw::RoundedRectClipGpu {
-                    rect: [c.rect.x, c.rect.y, c.rect.w, c.rect.h],
-                    radii: c.radii,
-                }),
+                .map(Into::into),
             opacity: capture.opacity,
             matrix: capture.matrix,
             perspective: capture.perspective,

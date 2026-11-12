@@ -126,40 +126,16 @@ fn ink_bounds(
                 style: run.style,
                 family: run.family.clone(),
             };
-            let glyphs = jag_draw::rasterize_run_cached(provider.as_ref(), &physical);
             let origin = [
                 a * run.pos[0] + c * run.pos[1] + e,
                 b * run.pos[0] + d * run.pos[1] + f,
             ];
-            Some(
-                glyphs
-                    .iter()
-                    .map(|glyph| {
-                        let (w, h) = match &glyph.mask {
-                            jag_draw::GlyphMask::Color(mask) => (mask.width, mask.height),
-                            jag_draw::GlyphMask::Subpixel(mask) => (mask.width, mask.height),
-                        };
-                        let mut x = origin[0] + glyph.offset[0] / dpi;
-                        let mut y = origin[1] + glyph.offset[1] / dpi;
-                        if logical_size <= 15.0 {
-                            x = (x * dpi).round() / dpi;
-                            y = (y * dpi).round() / dpi;
-                        }
-                        Rect {
-                            x,
-                            y,
-                            w: w as f32 / dpi,
-                            h: h as f32 / dpi,
-                        }
-                    })
-                    .reduce(union)
-                    .unwrap_or(Rect {
-                        x: 0.0,
-                        y: 0.0,
-                        w: 0.0,
-                        h: 0.0,
-                    }),
-            )
+            Some(jag_draw::rasterized_run_ink_bounds(
+                provider.as_ref(),
+                &physical,
+                origin,
+                dpi,
+            ))
         }
         Command::BoxShadow {
             rrect,

@@ -210,10 +210,14 @@ struct ImageParams {
     // 1 when sampling decodes to linear (an `*Srgb` texture); 0 when the
     // texture already holds values in the target's blend space.
     source_linear: f32,
-    // Rounded-rect clip in device pixels: (x, y, width, height).
+    // Rounded-rect clip in clip space: (x, y, width, height).
     clip_rect: vec4<f32>,
-    // Per-corner radii in device pixels: (top-left, top-right, bottom-right, bottom-left).
+    // Per-corner radii in clip space: (top-left, top-right, bottom-right, bottom-left).
     clip_radii: vec4<f32>,
+    // Rows of the affine map from a device pixel to clip space; the identity
+    // unless the clip is rotated or skewed on screen.
+    clip_from_device_x: vec4<f32>,
+    clip_from_device_y: vec4<f32>,
 };
 @group(3) @binding(0) var<uniform> img_params: ImageParams;
 
@@ -268,7 +272,12 @@ fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
         let cr = img_params.clip_rect;
         let center = vec2<f32>(cr.x + cr.z * 0.5, cr.y + cr.w * 0.5);
         let half = vec2<f32>(cr.z * 0.5, cr.w * 0.5);
-        let d = rounded_box_sdf(inp.pos.xy, center, half, img_params.clip_radii);
+        let device = vec3<f32>(inp.pos.xy, 1.0);
+        let clip_pos = vec2<f32>(
+            dot(img_params.clip_from_device_x.xyz, device),
+            dot(img_params.clip_from_device_y.xyz, device)
+        );
+        let d = rounded_box_sdf(clip_pos, center, half, img_params.clip_radii);
         if d > 0.5 {
             discard;
         }

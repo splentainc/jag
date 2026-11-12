@@ -12,6 +12,9 @@ struct ClipProperty {
     parent: usize,
     owner: usize,
     rect: Rect,
+    /// The authored rect before `transform`; a rotated clip needs both.
+    local: Rect,
+    transform: Transform2D,
     radii: Option<[f32; 4]>,
 }
 enum Op {
@@ -136,10 +139,13 @@ impl CompiledScene {
                 }
                 Command::PushClip(rect) => {
                     let index = result.clips.len() + 1;
+                    let transform = *transforms.last().unwrap();
                     result.clips.push(ClipProperty {
                         parent: clip,
                         owner,
-                        rect: transformed_rect_bounds(rect.0, *transforms.last().unwrap()),
+                        rect: transformed_rect_bounds(rect.0, transform),
+                        local: rect.0,
+                        transform,
                         radii: None,
                     });
                     clips.push(index);
@@ -348,22 +354,19 @@ impl JagSurface {
         let mut clips = vec![clip];
         for property in &compiled.clips {
             let parent = clips[property.parent];
-            let rect = translated(property.rect, deltas[property.owner]);
+            let delta = deltas[property.owner];
+            let rect = translated(property.rect, delta);
+            let mut transform = property.transform;
+            transform.m[4] += delta[0];
+            transform.m[5] += delta[1];
             let rounded = property
                 .radii
-                .map(|radii| jag_draw::RoundedRectClipGpu {
-                    rect: [
-                        rect.x * scale,
-                        rect.y * scale,
-                        rect.w * scale,
-                        rect.h * scale,
-                    ],
-                    radii,
-                })
+                .and_then(|radii| rounded_clip(property.local, radii, transform, scale))
                 .or(parent.rounded);
             clips.push(Clip {
                 rect: intersect(parent.rect, rect),
-                authored: rect,
+                local: property.local,
+                transform,
                 rounded,
             });
         }

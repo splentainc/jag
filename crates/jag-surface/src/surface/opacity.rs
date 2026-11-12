@@ -230,6 +230,7 @@ impl JagSurface {
             [f32; 2],
             i32,
             f32,
+            Transform2D,
             Option<jag_draw::Rect>,
             Option<jag_draw::RoundedRectClipGpu>,
         )> = Vec::new();
@@ -238,8 +239,14 @@ impl JagSurface {
             if let Some((_, image_width, image_height)) =
                 self.pass.try_get_image_view(&resolved_path)
             {
+                // Extraction has already transformed the origin. Keep that
+                // translation once and fit in the element's own space, so the
+                // linear part of the transform shapes the quad.
+                let mut transform = draw.transform;
+                transform.m[4] = draw.origin[0];
+                transform.m[5] = draw.origin[1];
                 let (origin, size) = super::calculate_image_fit(
-                    draw.origin,
+                    [0.0, 0.0],
                     draw.size,
                     image_width as f32,
                     image_height as f32,
@@ -251,6 +258,7 @@ impl JagSurface {
                     size,
                     draw.z,
                     draw.opacity,
+                    transform,
                     None,
                     None,
                 ));
@@ -258,7 +266,7 @@ impl JagSurface {
                 self.pending_image_loads |= self.pass.request_image_load(&resolved_path);
             }
         }
-        group_images.sort_by_key(|(_, _, _, z, _, _, _)| *z);
+        group_images.sort_by_key(|(_, _, _, z, _, _, _, _)| *z);
 
         let width = geometry.pixel_size[0];
         let height = geometry.pixel_size[1];
