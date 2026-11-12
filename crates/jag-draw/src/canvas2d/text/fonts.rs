@@ -1,10 +1,17 @@
 use super::*;
 use fontdb::{Database, Family, ID, Query, Style, Weight};
 use jag_text::font::FontFace;
-use std::{collections::HashMap, sync::OnceLock};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::OnceLock,
+};
 pub struct Fonts {
     db: Database,
     cache: HashMap<ID, FontFace>,
+    /// Faces over quota or unparsable. Without this, a large fallback font (an
+    /// emoji font is over 100 MB) is copied and refused again for every glyph
+    /// cluster shaped. Cleared when `remove` frees quota.
+    rejected: HashSet<ID>,
     bytes: usize,
     registered: HashMap<ID, usize>,
 }
@@ -39,6 +46,7 @@ impl Default for Fonts {
         Self {
             db,
             cache: HashMap::new(),
+            rejected: HashSet::new(),
             bytes,
             registered: HashMap::new(),
         }
@@ -82,6 +90,7 @@ impl Fonts {
         Ok(())
     }
     pub fn remove(&mut self, family: &str, weight: u16, italic: bool) {
+        self.rejected.clear();
         let ids: Vec<_> = self
             .db
             .faces()
@@ -108,20 +117,30 @@ impl Fonts {
     }
     fn face(&mut self, id: ID) -> Option<FontFace> {
         if !self.cache.contains_key(&id) {
-            if self.cache.len() >= 128 {
+            if self.rejected.contains(&id) {
                 return None;
             }
-            let data = self
-                .db
-                .with_face_data(id, |data, index| (data.to_vec(), index))?;
-            if self.bytes + data.0.len() > 64 * 1024 * 1024 {
+            let loaded = self.load_face(id);
+            let Some(face) = loaded else {
+                self.rejected.insert(id);
                 return None;
-            }
-            self.bytes += data.0.len();
-            let face = FontFace::from_vec(data.0, data.1 as usize).ok()?;
+            };
+            self.bytes += face.as_bytes().len();
             self.cache.insert(id, face);
         }
         self.cache.get(&id).cloned()
+    }
+    /// Copy and parse a face if the quotas allow. The size is read before the
+    /// copy so a face that cannot fit is never copied.
+    fn load_face(&self, id: ID) -> Option<FontFace> {
+        let (size, index) = self
+            .db
+            .with_face_data(id, |data, index| (data.len(), index))?;
+        if self.cache.len() >= 128 || self.bytes + size > 64 * 1024 * 1024 {
+            return None;
+        }
+        let data = self.db.with_face_data(id, |data, _| data.to_vec())?;
+        FontFace::from_vec(data, index as usize).ok()
     }
     pub(super) fn primary(&mut self, s: &TextStyle) -> Option<(ID, FontFace)> {
         let names: Vec<_> = s
@@ -224,3 +243,7 @@ fn stretch(value: &str) -> fontdb::Stretch {
         _ => Normal,
     }
 }
+
+#[cfg(test)]
+#[path = "fonts_tests.rs"]
+mod tests;
